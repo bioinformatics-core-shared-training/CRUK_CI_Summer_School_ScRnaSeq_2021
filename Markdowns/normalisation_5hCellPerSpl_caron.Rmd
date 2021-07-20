@@ -1,0 +1,2068 @@
+---
+title: "CRUK CI Summer School 2020 - introduction to single-cell RNA-seq analysis"
+subtitle: 'Normalisation - Caron data set - 500 cells per sample'
+
+author: "Stephane Ballereau"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    number_sections: true
+    code_folding: hide
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    number_sections: true
+  html_book:
+    code_folding: hide
+---
+
+<!--
+params:
+  projDir: "/ssd/personal/baller01/20200511_FernandesM_ME_crukBiSs2020"
+  dirRel: ".."
+  inpDirBit: "AnaWiSce/Ana1"
+  outDirBit: "AnaWiSce/Ana1"
+  bookType: "mk"
+  cacheBool: FALSE
+-->
+
+# Normalisation - Caron set {#NormalisationCaron5hcpsTop}
+
+```{r norm_Caron.knitr_options, echo=FALSE, results="hide", message=FALSE, dev="CairoPNG"}
+library(knitr)
+cacheBool <- !TRUE
+
+# if X11 is not available, add:
+# 'dev="CairoPNG"' in chunk param above
+# options(bitmapType='cairo')
+# opts_chunk$set(dev="CairoPNG")
+# library(Cairo)
+
+options(bitmapType='cairo') # if X11 is not available
+opts_chunk$set(dev="CairoPNG") # if X11 is not available
+library(Cairo) # if X11 is not available
+
+opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE, cache=cacheBool)
+opts_chunk$set(fig.width=7, fig.height=7)
+set.seed(123) # for reproducibility
+```
+
+Sources: chapters on normalisation in the
+[OSCA book](https://osca.bioconductor.org/normalization.html) and the
+[Hemberg group materials](https://scrnaseq-course.cog.sanger.ac.uk/website/index.html).
+
+## Learning objectives
+
+<!--
+<style>
+div.blue {background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
+</style>
+<div class = "blue">
+-->
+
+* Understand why normalisation is required
+* Understand concepts of two normalisation methods
+  * deconvolution
+  * SCTransform 
+
+<!--
+</div>
+-->
+
+<!--
+* Understand why normalisation is required
+  * differences in sequencing coverage between libraries
+    * due to low input material, differences in cDNA capture and PCR amplification
+  * differences between cells aould be tecnical, not biological
+  * comparisons between cells would not be meaningful
+* deconvolution
+  * compute for each cell a series of scaling factors
+* SCTransform
+  * elimination of the correlation between gene expression levels and library size,
+    using by regression
+-->
+
+## Why normalise?
+
+Systematic differences in sequencing coverage between libraries occur because of
+low input material, differences in cDNA capture and PCR amplification.
+Normalisation removes such differences so that differences between cells are not
+technical but biological, allowing meaningful comparison of expression profiles
+between cells. Normalisation and batch correction have different aims.
+Normalisation addresses technical differences only, while batch correction
+considers both technical and biological differences.
+
+<!-- PARAMS and LIBRARIES -->
+
+```{r Caron_variables_norm}
+projDir <- ".." # or /home/ubuntu/CourseMaterials/scRNAseq
+dirRel <- ".."
+outDirBit <- "CourseMaterials"
+setName <- tolower("Caron")
+writeRds <- TRUE # FALSE
+```
+
+```{r Caron_libraries_norm, include=FALSE, results='hide', message=FALSE, warning=FALSE}
+library(scater)
+library(scran)
+library(tidyverse)
+library(BiocSingular)
+library(BiocParallel)
+library(glue)
+library(patchwork)
+
+# prepare 'cluster' for multicore processing
+# use 7 workers
+bpp <- MulticoreParam(7)
+```
+
+<!-- calc_cell_RLE function - positive median -->
+
+```{r, eval=FALSE}
+# calculate RLE for gene whose median is positive.
+# ok for non-sparse matrix eg smart-seq
+# but not sparse 10X
+
+calc_cell_RLE <- function (expr_mat, spikes = NULL) 
+{
+  # define RLE_gene function:
+  # compute RLE for a given gene
+  # if median expression for that gene is positive
+  # then compute RLE: log(count in cell / median count across cells)/log2
+    RLE_gene <- function(x) {
+      #print(length(x))
+      #print(median(unlist(x)))
+        if (median(unlist(x)) > 0) {
+            log((x + 1)/(median(unlist(x)) + 1))/log(2)
+        }
+        else {
+            rep(NA, times = length(x))
+        }
+    }
+    if (!is.null(spikes)) {
+        RLE_matrix <- t(apply(expr_mat[-spikes, ], 1, RLE_gene))
+    }
+    else {
+        RLE_matrix <- t(apply(expr_mat, 1, RLE_gene))
+    }
+    return(RLE_matrix)
+    cell_RLE <- apply(RLE_matrix, 2, median, na.rm = T)
+    #print(cell_RLE)
+    return(cell_RLE)
+}
+
+# compare to plotRLE
+#    features_meds <- rowMedians(exprs_mat)
+#    med_devs <- exprs_mat - features_meds
+```
+
+<!-- plot functions -->
+
+```{r}
+# prepare RLE matrix
+prepRleMat <- function(rleMat, sce = sce) {
+	# count NAs for each cell
+	nbNonNaPerCell <- colSums(!is.na(rleMat))
+	# derive long table for plotting
+	dd <- rleMat %>%
+	  data.frame() %>%
+	  tibble::rownames_to_column("geneId") %>%
+	  pivot_longer(!geneId, names_to = "Barcode", values_to = "rle")
+	# have temp copy of cell meta data to use in plot
+	colDataTmp <- data.frame(
+	  colData(sce)[,c("Barcode", "SampleGroup", "SampleName")]
+	  )
+	colDataTmp$Barcode <- gsub("-", ".", colDataTmp$Barcode)
+	colDataTmp$nbNonNaPerCell <- nbNonNaPerCell
+	# merge long RLE matrix with cell meta data:
+	dd2 <- dd %>%
+	  left_join(colDataTmp, by="Barcode")
+	# return
+	return(dd2)
+}
+
+# function to plot RLE
+myRlePlot <- function(ddToShow, bcToGet=NULL, sortBool=TRUE, qCutBool = TRUE) {
+	# Have function for code chunk above
+  
+  # filter barcode if necessary
+	if(!is.null(bcToGet)) {
+	  ddToShow <- ddToShow %>% dplyr::filter(Barcode %in% bcToGet)
+	}
+
+  # filter gene if necessary
+	nbNonNaPerGene <- rowSums(!is.na(deconvRleMat))
+	tmpDf <- ddToShow %>%
+	  group_by(geneId) %>%
+	  summarise(nbNonNaPerGene=sum(!is.na(rle))) %>%
+	  #deframe()
+	  dplyr::select(geneId, nbNonNaPerGene)
+
+	ddToShow <- ddToShow %>%
+		  left_join(tmpDf, by="geneId")
+
+	  if(qCutBool) {
+	qCut <- quantile(tmpDf$nbNonNaPerGene, prob=0.95)
+	  ddToShow <- ddToShow %>% dplyr::filter(nbNonNaPerGene > qCut) 
+	}
+  # compute median RLE for each cell across genes
+	ddToShowMedianRle <- ddToShow %>%
+	  group_by(SampleName, Barcode) %>%
+	  summarise(medianRle=median(rle, na.rm = TRUE))
+
+	# group cell by sampleName
+	ddToShowMedianRleSorted <- ddToShowMedianRle %>%
+	  group_by(SampleName) %>%
+	  arrange(Barcode, .by_group = TRUE)
+  
+	# sort cell median RLE in increasing order
+	if(sortBool)
+	{
+	  ddToShowMedianRleSorted <- ddToShowMedianRle %>%
+	    group_by(SampleName) %>%
+	    arrange(medianRle, .by_group = TRUE)
+	}
+	ddToShowSort <- ddToShowMedianRleSorted$Barcode
+
+	# set levels
+ 	ddToShow$Barcode <- factor(ddToShow$Barcode,
+                           levels=ddToShowSort)
+
+ 	# remove NA RLEs
+	ddToShow <- ddToShow %>%
+	  dplyr::filter(!is.na(rle))
+
+	# make plot:	
+  	if(!sortBool) {
+		p <- ggplot(ddToShow, aes(x=Barcode, y=rle, col=SampleName))
+	} else {
+	p <- ggplot(ddToShow, aes(x=Barcode, y=rle,
+				  #shape=SampleName,
+				  col=nbNonNaPerCell)) +
+	    		scale_colour_gradient(low="blue", high="yellow")
+	}
+	p2 <- p +
+	  stat_summary(geom = "pointrange", 
+	        width = 0.20, fatten = 0,
+	        mapping = aes(group = SampleName),
+	        fun.data = function(x) {
+	            c(y = median(x),
+	              ymin = unname(quantile(x,probs=0.25)),
+	              ymax = unname(quantile(x,probs=0.75))
+	              )
+	        }) +
+	  stat_summary(geom = "crossbar", 
+	        width = 0.20, fatten = 0,
+	        color = "black",
+	        fun.data = function(x) {
+	            c(y = median(x),
+	              ymin = median(x),
+	              ymax = median(x)
+	              )
+	        }) +
+	  ylab("Relative log expression") +
+	  xlab("Sample") +
+	  theme_classic() +
+	  theme(axis.text.x = element_blank(), 
+	        axis.ticks.x = element_blank(),
+	        axis.line.x = element_blank()) +
+	  geom_hline(yintercept = 0)
+	return(p2)
+}
+```
+
+## Load object
+
+We will load the R object created after QC and check its content (class, dimensions, assays, ...)
+
+```{r Caron_norm_readIn_5hCellPerSpl, cache.lazy = FALSE}
+# Read object in:
+sce <- readRDS("../CourseMaterials/Robjects/Caron_filtered.rds")
+sce
+```
+
+```{r}
+dd <- colData(sce) %>%
+  data.frame() %>%
+  rename(SampleName=Sample) %>% # TODO: change that in preProc
+  DataFrame()
+
+colData(sce) <- dd  
+```
+
+We can also count the number of cells for each sample:
+
+```{r Caron_norm_sampleSheet}
+colData(sce) %>%
+  # colData() returns a DFrame
+  # that we need to convert to a data.frame for parsing
+  data.frame() %>%
+  # group by some columns only: SampleName, SampleId, SampleGroup
+  # (could do with SampleName only but we would miss SampleId, SampleGroup later)
+  group_by(SampleName, SampleId, SampleGroup) %>%
+  # count cells for each group
+  summarise(nbCells=n()) %>%
+  # display output table
+  DT::datatable(rownames = FALSE,
+                options = list(dom="tpl", pageLength = 15))
+```
+
+For analyses to run within the time allocated to sessions,
+we will subsample cells down to 500 per sample:
+
+```{r Caron_norm_downsample}
+# have a variable to keep information on downsampling
+# to use to describe data sets and files.     
+setSuf <- "_5hCellPerSpl"
+# number of cells to keep
+nbCells <- 500
+
+# have new list of cell barcodes for each sample
+vec.bc <- colData(sce) %>%
+	data.frame() %>%
+	dplyr::filter(!SampleId == "SRR9264351") %>%
+	group_by(SampleName) %>%
+	sample_n(nbCells) %>%
+	pull(Barcode)
+
+# subsetting a SCE (SingleCellExperiment) object requires indices not names
+# so find index for each cell we will keep:
+tmpInd <- which(colData(sce)$Barcode %in% vec.bc) # mind QC metrics will be wrong
+# subset cells from the existing SCE object:
+sce <- sce[,tmpInd] # this update 'sce', e.g. its assays, but not the cell meta data.
+
+colData(sce) %>%
+  data.frame() %>%
+  dplyr::select(SampleName, SampleId, SampleGroup) %>%
+  group_by(SampleName, SampleId, SampleGroup) %>%
+  summarise(nbCells=n()) %>%
+  DT::datatable(rownames = FALSE,
+                options = list(dom="tpl", pageLength = 15, nrows=20))
+```
+
+<!--
+# mind that genes were filtered using all cells, not just those sampled here.
+# check for lowly expressed genes:
+-->
+
+```{r Caron_norm_filterGenes}
+# find out which genes are expressed 
+lowExpGenes <- rowSums(counts(sce)) > 5
+table(lowExpGenes)
+
+# for each gene in each cell: is it expressed?
+exprLogic <- counts(sce) > 0 # pot exerc gt 2, 5
+# count cells where gene is expressed,
+# and ask if the number of cells is gt 5
+detectedGenes <- rowSums(exprLogic) > 5
+# count genes in each class, not-detected and detected
+table(detectedGenes)
+
+# remove these genes:
+sce <- sce[detectedGenes,] # removes genes but does not update QC metrics.
+
+# update cell QC metrics
+sce <- addPerCellQC(sce)
+
+# update gene QC metrics
+sce <- addPerFeatureQC(sce, BPPARAM = bpp)
+```
+
+<!-- We write the R object to '`r glue("{setName}_postQc{setSuf}.Rds")`'. -->
+We write the R object to '`r str_glue("{setName}_postQc{setSuf}.Rds")`'.
+
+```{r Caron_downsample_write}
+# Write object to file
+# file name:
+tmpFn <- str_glue("{projDir}/{outDirBit}/{setName}_postQc{setSuf}.Rds")
+# write to file
+saveRDS(sce, tmpFn)
+# tidy:
+rm(tmpFn)
+```
+
+## Scaling normalization
+
+In scaling normalization, the “normalization factor” is an estimate of the
+library size relative to the other cells. Steps usually include: computation of
+a cell-specific 'scaling' or 'size' factor that represents the relative bias in
+that cell and division of all counts for the cell by that factor to remove that
+bias. Assumption: any cell specific bias will affect genes the same way.
+
+Scaling methods typically generate normalised counts-per-million (CPM) or 
+transcripts-per-million (TPM) values that address the effect of sequencing depth.
+These values however typically have a variance that increases with their mean 
+(heteroscedasticity) while most statistical methods assume a stable variance,
+which does not vary with the mean (homoscedasticity). A widely used 'variance
+stabilising transformation' is the log transformation (often log2). This works
+fine for highly expressed genes (as in bulk RNA-seq) but less so for sparse
+scRNA-seq data.
+
+### CPM
+
+Convert raw counts to counts-per-million (CPM) for each cell by dividing counts
+by the library size then multiplying by 1.000.000. Mind that this does not
+adress compositional bias caused by highly expressed genes that are also
+differentially expressed between cells. In `scuttle` CPMs are computed as follows:
+
+```{r Caron_calc_cpm}
+calc_cpm <- function (expr_mat, spikes = NULL) 
+{
+    norm_factor <- colSums(expr_mat[-spikes, ])
+    return(t(t(expr_mat)/norm_factor)) * 10^6
+}
+```
+
+We will use `scuttle`'s calculateCPM()
+
+### DESeq's size factor
+
+For each gene, compute geometric mean across cells. for each cell compute for 
+each gene the ratio of its expression to its geometric mean, and derive the 
+cell's size factor as the median ratio across genes. Not suitable for sparse
+scRNA-seq data as the geometric is computed on non-zero values only. This method
+is also known as 'Relative Log Expression' (RLE) in `edgeR` and `scater`. 
+
+Example code:
+
+```{r Caron_calc_sf}
+calc_sf <- function (expr_mat, spikes = NULL) 
+{
+    geomeans <- exp(rowMeans(log(expr_mat[-spikes, ])))
+    SF <- function(cnts) {
+        median((cnts/geomeans)[(is.finite(geomeans) &
+				geomeans > 0)])
+    }
+    norm_factor <- apply(expr_mat[-spikes, ], 2, SF)
+    return(t(t(expr_mat)/norm_factor))
+}
+```
+
+### Weighted Trimmed mean of M-values
+
+To compute weighted Trimmed mean of M-values (TMM), a given cell is chosen as a
+reference to use in computation for other cells. The M-values are gene-wise
+log2-fold changes between cells. Trimming entails the removal of the top and
+bottom 30% of values. The size factor is computed as the average for the remaining
+cells with a weight according to inverse variances. This method assumes that
+most genes are not differentially expressed, and the 40% of genes left after 
+trimming may include many zero counts.
+
+```{r calcNormFactors_comp_norm_Caron_5hCellPerSpl}
+sizeFactors(sce) <- edgeR::calcNormFactors(counts(sce), method = "TMM")
+```
+
+### Library size normalization
+
+For each cell, the library size factor is proportional to the library size such
+that the average size factor across cell is one.
+
+Advantage: normalised counts are on the same scale as the initial counts.
+
+Compute size factors:
+
+```{r librarySizeFactors_comp_norm_Caron_5hCellPerSpl}
+lib.sf <- librarySizeFactors(sce)
+summary(lib.sf)
+```
+
+Size factor distribution: wide range, typical of scRNA-seq data.
+
+```{r librarySizeFactors_hist_norm_Caron_5hCellPerSpl}
+#hist(log10(lib.sf), xlab="Log10[Size factor]", col='grey80')
+
+dd <- data.frame("log10libSf"=log10(lib.sf))
+ggplot(dd, aes(x=log10libSf)) + 
+  geom_histogram(bins=50)
+```
+
+Assumption: absence of compositional bias; differential expression between two 
+cells is balanced: upregulation in some genes is accompanied by downregulation 
+of other genes. Not observed.
+
+Inaccurate normalisation due to unaccounted-for composition bias affects the 
+size of the log fold change measured between clusters, but less so the
+clustering itself. It is thus sufficient to identify clusters and top marker 
+genes.
+
+### Deconvolution
+
+Composition bias occurs when differential expression beteween two samples
+or here cells is not balanced. For a fixed library size, identical in both cells,
+upregulation of one gene in a cell will means fewer UMIs can be assigned to other
+genes, which would then appear down regulated. Even if library sizes are allowed
+to differ, with that for the cell with upregulation being higher, scaling
+normalisation will reduce normalised counts. Non-upregulated would therefore
+also appear downregulated. 
+
+For bulk RNA-seq, composition bias is removed by assuming that most genes are
+not differentially expressed between samples, so that differences in non-DE 
+genes would amount to the bias, and used to compute size factors.
+
+Given the sparsity of scRNA-seq data, the methods are not appropriate.
+
+The method below increases read counts by pooling cells into groups, computing
+size factors within each of these groups and scaling them so they are comparable
+across clusters. This process is repeated many times, changing pools each time
+to collect several size factors for each cell, from which is derived a single
+value for that cell.
+
+<!--
+see DESeq2 estimateSizeFactorsFromMatrix
+see edgeR calcNormFactors
+-->
+
+```{r scran_Fig3_Caron}
+knitr::include_graphics("../Images/scran_Fig3.png", auto_pdf = TRUE)
+```
+
+Cluster cells then normalise.
+
+#### Cluster cells
+
+```{r comp_quickClus_norm_Caron_5hCellPerSpl, eval=writeRds}
+set.seed(100) # clusters with PCA from irlba with approximation
+clust <- quickCluster(sce, BPPARAM=bpp) # slow with all cells.
+table(clust)
+```
+
+#### Compute size factors
+
+```{r calculateSumFactors_norm_Caron_5hCellPerSpl, eval=writeRds}
+#deconv.sf <- calculateSumFactors(sce, cluster=clust)
+sce <- computeSumFactors(sce,
+			 cluster = clust,
+			 min.mean = 0.1,
+			 BPPARAM = bpp)
+deconv.sf <- sizeFactors(sce)
+summary(deconv.sf)
+
+# min.mean
+# A numeric scalar specifying the minimum (library size-adjusted) average count of genes to be used for normalization.
+```
+
+Plot deconvolution size factors against library size factors:
+
+```{r scatter_deconvSf_libSf_colBy_plot_norm_Caron_5hCellPerSpl}
+sce <- addPerFeatureQC(sce, BPPARAM = bpp) # PATCH
+
+colData(sce)$cell_sparsity <- 1 - (colData(sce)$detected / nrow(sce))
+rowData(sce)$gene_sparsity <- (100 - rowData(sce)$detected) / 100
+
+deconvDf <- data.frame(lib.sf, deconv.sf,
+			"source_name" = sce$SampleGroup,
+			"sum" = sce$sum,
+			"mito_content" = sce$subsets_Mito_percent,
+			"cell_sparsity" = sce$cell_sparsity)
+```
+
+```{r scatter_deconvSf_libSf_colBy_sourceName_plot_norm_Caron_5hCellPerSpl}
+# colour by sample type
+sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=source_name)) +
+  geom_point()
+sp
+```
+
+```{r scatter_deconvSf_libSf_colBy_sourceName_split_plot_norm_Caron_5hCellPerSpl, eval=FALSE}
+# Split by sample type
+sp + facet_wrap(~source_name)
+```
+
+```{r scatter_deconvSf_libSf_colBy_more_norm_Caron_allCells, eval=FALSE, include=FALSE}
+# colour by library size
+sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=sum)) +
+  geom_point()
+sp
+
+# colour by mito. content
+sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=mito_content)) +
+  geom_point()
+sp
+```
+
+```{r scatter_deconvSf_libSf_colBy_cellSpars_norm_Caron_allCells}
+# colour by cell sparsity
+sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=cell_sparsity)) +
+  geom_point()
+sp
+```
+
+#### Apply size factors
+
+For each cell, raw counts for genes are divided by the size factor for that cell and log-transformed so downstream analyses focus on genes with strong relative differences. We use `scater::logNormCounts()`.
+
+```{r logNormCounts_norm_Caron_5hCellPerSpl}
+sce <- logNormCounts(sce) # adds logcounts
+# check list of assays stored:
+print(assayNames(sce))
+```
+
+#### Save object
+
+```{r sce_copy_norm_Caron_5hCellPerSpl}
+sceDeconv <- sce
+```
+
+```{r sce_write_norm_Caron_5hCellPerSpl, eval=writeRds}
+# write to file
+tmpFn <- str_glue("{projDir}/{outDirBit}/{setName}_postDeconv{setSuf}.Rds")
+saveRDS(sceDeconv, tmpFn)
+rm(tmpFn)
+```
+
+## Exercise 1
+
+Exercise: apply the deconvolution normalisation on a single sample: ETV6-RUNX1_1 (aka GSM3872434).
+
+You first load the same object we loaded earlier, then select cells for SampleName 'ETV6-RUNX1_1'. You will then cluster cells, compute and apply size factors.
+
+## SCTransform
+
+<!--
+https://rawgit.com/ChristophH/sctransform/master/inst/doc/variance_stabilizing_transformation.html
+
+vars.to.regress = c("S.Score", "G2M.Score")
+vars.to.regress = c("percentMito","Sex")
+-->
+
+With scaling normalisation a correlation remains between the mean and variation
+of expression (heteroskedasticity). This affects downstream dimensionality
+reduction as the few main new dimensions are usually correlated with library
+size. SCTransform addresses the issue by regressing library size out of raw
+counts and providing residuals to use as normalized and variance-stabilized
+expression values in some downstream analyses, such as dimensionality reduction.
+We will use the
+[sctransform vignette](https://cran.r-project.org/web/packages/sctransform/index.html).
+
+We will first obtain the raw counts matrix:
+
+```{r counts_sct_Caron_5hCellPerSpl}
+# keep raw counts in a 'counts' variable:
+counts <- counts(sce)
+# check the class of the object
+# expect a 'dgCMatrix': Compressed, sparse, column-oriented numeric matrices
+# the “standard” class for sparse numeric matrices in the Matrix package
+print(class(counts))
+# check the dimensions of the object
+print(dim(counts))
+# name columns (cells) with barcodes
+colnames(counts) <- colData(sce)$Barcode
+```
+
+### Inspect data
+
+We will now calculate some properties and visually inspect the data. Our main interest is in the general trends not in individual outliers. Neither genes nor cells that stand out are important at this step; we focus on the global trends.
+
+#### Derive gene and cell attributes from the UMI matrix
+
+Gene attributes include for each gene:
+
+* mean UMI count across cells
+* number of cells where the gene is detected
+* variance of UMI counts across cells
+* the mean and variance above on the log10 scale
+
+Cells attributes include for each cell:
+
+* total UMI count across genes (library size)
+* number of genes detected (with at least 1 UMI)
+
+```{r attr_comp_sct_Caron_5hCellPerSpl}
+# gene attributes:
+# prepare a data frame named e.g. 'gene_attr' to keep gene attributes, inc:
+gene_attr <- data.frame(mean = rowMeans(counts), 
+                        detection_rate = rowMeans(counts > 0),
+                        var = rowVars(counts))
+gene_attr$log_mean <- log10(gene_attr$mean)
+gene_attr$log_var <- log10(gene_attr$var)
+# name rows of the 'gene_attr' data frame:
+rownames(gene_attr) <- rownames(counts)
+
+# cell attributes:
+cell_attr <- data.frame(n_umi = colSums(counts),
+                        n_gene = colSums(counts > 0))
+rownames(cell_attr) <- colnames(counts)
+```
+
+#### Gene attributes
+
+```{r gene_attr_sct_Caron_5hCellPerSpl}
+dim(gene_attr)
+head(gene_attr)
+```
+
+#### Cell attributes
+
+```{r cell_attr_sct_Caron_5hCellPerSpl}
+dim(cell_attr)
+head(cell_attr)
+```
+
+#### Mean-variance relationship
+
+For the genes, on the log10 scale we can see that up to a mean UMI count of 0
+the variance follows the line through the origin with slop one,
+i.e. variance and mean are roughly equal as expected under a Poisson model.
+However, genes with a higher average UMI count show overdispersion compared to Poisson.
+
+```{r attr_plot_sct_Caron_5hCellPerSpl}
+ggplot(gene_attr, aes(log_mean, log_var)) + 
+  geom_point(alpha=0.3, shape=16) + 
+  geom_density_2d(size = 0.3) +
+  geom_abline(intercept = 0, slope = 1, color='red')
+```
+
+#### Mean-detection-rate relationship
+
+In line with the previous plot, we see a lower than expected detection rate in
+the medium expression range. However, for the highly expressed genes, the rate
+is at or very close to 1.0 suggesting that there is no zero-inflation in the
+counts for those genes and that zero-inflation is a result of overdispersion,
+rather than an independent systematic bias.
+
+```{r scatter_detecRate_logMean_sct_Caron_5hCellPerSpl}
+# add the expected detection rate under Poisson model
+x = seq(from = -3, to = 2, length.out = 1000)
+poisson_model <- data.frame(log_mean = x,
+			    detection_rate = 1 - dpois(0, lambda = 10^x))
+ggplot(gene_attr, aes(log_mean, detection_rate)) + 
+  geom_point(alpha=0.3, shape=16) + 
+  geom_line(data=poisson_model, color='red') +
+  theme_gray(base_size = 8)
+```
+
+#### Cells attributes
+
+The plot below show the relationship between the to cell attributes computed: library size (n_umi) and number of genes detected (n_gene).
+
+```{r scatter_nGene_nUmi_sct_Caron_5hCellPerSpl, eval=FALSE}
+ggplot(cell_attr, aes(n_umi, n_gene)) + 
+  geom_point(alpha=0.3, shape=16) + 
+  geom_density_2d(size = 0.3)
+```
+
+### Transformation
+
+#### Method
+
+"Based on the observations above, which are not unique to this particular data
+set, we propose to model the expression of each gene as a negative binomial
+random variable with a mean that depends on other variables. Here the other
+variables can be used to model the differences in sequencing depth between
+cells and are used as independent variables in a regression model. In order to 
+avoid overfitting, we will first fit model parameters per gene, and then use
+the relationship between gene mean and parameter values to fit parameters,
+thereby combining information across genes. Given the fitted model parameters,
+we transform each observed UMI count into a Pearson residual which can be
+interpreted as the number of standard deviations an observed count was away
+from the expected mean. If the model accurately describes the mean-variance
+relationship and the dependency of mean and latent factors, then the result
+should have mean zero and a stable variance across the range of expression."
+[sctransform vignette](https://cran.r-project.org/web/packages/sctransform/index.html).
+
+In short:
+
+* expression of a gene is modeled by a negative binomial random variable with
+a mean that depends on library size
+* use library size as independent variable in regression model
+* fit model for each gene, then combine data across genes to fit parameters
+* convert UMI counts to residuals akin to the number of standard deviations
+away from the expected mean.
+
+Assumptions:
+
+* accurate model of the mean-variance relationship
+* accurate model of the dependency of mean and latent factors
+
+Outcome:
+
+* mean zero
+* stable variance across expression range
+
+#### Estimation and transformation
+
+We will now estimate model parameters and transform data
+
+The `vst` function estimates model parameters and performs the variance stabilizing
+transformation.
+
+Here we use the log10 of the total UMI counts of a cell as 
+variable for sequencing depth for each cell. After data transformation we plot 
+the model parameters as a function of gene mean (geometric mean).
+
+```{r comp_sct_Caron_5hCellPerSpl, warning=FALSE}
+print(dim(counts))
+# We use the Future API for parallel processing;
+# set parameters here
+future::plan(strategy = 'multicore', workers = 7)
+options(future.globals.maxSize = 10 * 1024 ^ 3)
+
+# transform counts:
+set.seed(44) # for reproducibility
+vst_out <- sctransform::vst(
+  counts, # A matrix of UMI counts with genes as rows and cells as columns
+  latent_var = c('log_umi'), # The independent variables to regress out as a character vector
+  return_gene_attr = TRUE, # Make cell attributes part of the output
+  return_cell_attr = TRUE, # Calculate gene attributes and make part of output
+  verbosity = 0 # An integer specifying what to show (0: nothing, 1: messages, 2: + progress bar)
+  )
+```
+
+#### Parameters plots
+
+```{r plot_sct_Caron_5hCellPerSpl}
+# diagnostic plots: estimated and fitted model parameters
+# by default parameters shown are:
+# - intercept
+# - latent variables, here log_umi
+# - overdispersion factor (od_factor)
+sctransform::plot_model_pars(
+  vst_out, # The output of a vst run
+  verbosity = 1 # Messages only, no progress bar
+  )
+```
+
+Inspect model:
+
+```{r model_show_sct_Caron_5hCellPerSpl}
+print(vst_out$model_str)
+```
+
+We will look at several genes in more detail by plotting the observed UMI counts and model.
+
+For each gene of interest, plots include:
+
+* the observed cell attribute (UMI counts) against the latent variable (library size) (by default), and the fitted model as a pink line showing the expected UMI counts given the model and a shaded region spanning one standard deviation from the expected value.
+* the residuals against the latent variable
+
+We will look at two genes: 'RPL10' and 'HBB':
+
+```{r plot_model_1_sct_Caron_5hCellPerSpl}
+rowData(sce) %>%
+	as.data.frame %>%
+	dplyr::filter(Symbol %in% c('RPL10', 'HBB'))
+
+ensId <- rowData(sce) %>%
+	as.data.frame %>%
+	dplyr::filter(Symbol %in% c('RPL10', 'HBB')) %>%
+  pull("ID")
+
+sctransform::plot_model(
+  vst_out, # The output of a vst run
+  counts, # UMI count matrix
+  ensId, # Vector of genes to plot
+  plot_residual = TRUE
+  )
+```
+
+<!-- exercise ? -->
+
+```{r, eval=FALSE}
+otherGene <- "BLA"
+
+rowData(sce) %>%
+	as.data.frame %>%
+	filter(Symbol %in% c(otherGene))
+
+ensId <- rowData(sce) %>%
+	as.data.frame %>%
+	filter(Symbol %in% c(otherGene)) %>%
+	pull("ID")
+
+sctransform::plot_model(
+  vst_out,
+  counts,
+  ensId,
+  plot_residual = TRUE
+  )
+```
+
+#### Overall properties
+
+The distribution of residual mean is cetered around 0:
+
+```{r plot_model_resMean_sct_Caron_5hCellPerSpl}
+ggplot(vst_out$gene_attr, aes(residual_mean)) +
+	geom_histogram(binwidth=0.01)
+```
+
+The distribution of residual variance is centered around 1:
+
+```{r plot_model_resVar_sct_Caron_5hCellPerSpl}
+ggplot(vst_out$gene_attr, aes(residual_variance)) +
+	geom_histogram(binwidth=0.1) +
+	geom_vline(xintercept=1, color='red') +
+	xlim(0, 10)
+```
+
+The following plot of the residual variance against the mean: after transformation there is no relationship between gene mean and variance.
+
+```{r plot_model_resVar_gMean_sct_Caron_5hCellPerSpl}
+ggplot(vst_out$gene_attr,
+       aes(log10(gmean), residual_variance)) +
+       geom_point(alpha=0.3, shape=16) +
+       geom_density_2d(size = 0.3)
+```
+
+Check genes with large residual variance. These genes would be markers of expected cell populations. Note how they represent a great range of mean UMI and detection rate values.
+
+```{r table_show_sct_Caron_5hCellPerSpl}
+dd <- vst_out$gene_attr %>%
+	arrange(-residual_variance) %>%
+	slice_head(n = 10) %>%
+	mutate(across(where(is.numeric), round, 2))
+
+dd %>% tibble::rownames_to_column("ID") %>%
+	left_join(as.data.frame(rowData(sce))[,c("ID", "Symbol")], "ID") %>%
+	DT::datatable(rownames = FALSE)
+```
+### Storage
+
+Check transformed values:
+
+```{r check_trans_sct_Caron_5hCellPerSpl}
+print(dim(vst_out$y))
+vst_out$y[1:10,1:5]
+
+sce
+print(assayNames(sce))
+```
+
+Genes that are expressed in fewer than 5 cells are not used and not returned,
+so to add vst_out$y as an assay we need to remove the missing genes.
+
+```{r subsetGenes_Caron_5hCellPerSpl}
+# genes that are expressed in fewer than 5 cells are not used and not returned
+# so to add vst_out$y as an assay we need to ditch the missing genes completely.
+# https://github.com/ChristophH/sctransform/issues/27
+
+sceOrig <- sce
+sceOrig
+geneOverlap <- rownames(sce) %in% rownames(vst_out$y)
+if(!all(geneOverlap))
+{
+  table(rownames(sce) %in% rownames(vst_out$y))
+  tmpInd <- which(rownames(sce) %in% rownames(vst_out$y))
+  sce <- sce[tmpInd,]
+  assayNames(sce)
+}
+```
+
+```{r copyVstMat_sct_Caron_5hCellPerSpl}
+sce
+vstMat <- as(vst_out$y[rownames(sce),], "dgCMatrix")
+# reading 10X data with vector above adds a prefix to sce colnames
+# so we will not pass vstMat colnames when copying it in a assay slot,
+# but must first check that barcodes are indeed in the same order
+# in sce and vstMat.
+all(colnames(vstMat) == sce$Barcode)
+all(rownames(vstMat) == rownames(sce))
+assay(sce, "sctrans_norm", withDimnames=FALSE) <- vstMat
+#assayNames(sce) # check sctrans_norm is there
+```
+
+### Save SCE object
+
+```{r sce_write_sct_Caron_5hCellPerSpl, eval=writeRds}
+# write to file
+tmpFn <- str_glue("{projDir}/{outDirBit}/{setName}_postSct{setSuf}.Rds")
+saveRDS(sce, tmpFn)
+rm(tmpFn)
+```
+
+## Exercise 2
+
+Exercise: apply the SCTransform normalisation on a single sample: ETV6-RUNX1_1 (aka GSM3872434).
+
+In exercise 1, you have made a new SCE object with cells for SampleName 'ETV6-RUNX1_1'.
+You will now inspect the mean-variance relationship and apply SCTransform to that data.
+
+## Effectiveness
+
+
+
+```{r}
+# https://github.com/NBISweden/excelerate-scRNAseq/blob/master/session-normalization/Normalization_with_answers.md
+# setwd("~/scrna-seq2019/day1/2-normalization/")
+
+system("curl -O http://cf.10xgenomics.com/samples/cell-exp/3.0.0/pbmc_1k_v3/pbmc_1k_v3_filtered_feature_bc_matrix.h5")
+pbmc.mat <- Seurat::Read10X_h5("pbmc_1k_v3_filtered_feature_bc_matrix.h5")  # needs hdf5r
+pbmc.sce <- SingleCellExperiment(assays = list(counts = as.matrix(pbmc.mat)))
+pbmc.sce <- pbmc.sce[rowSums(counts(pbmc.sce) > 0) > 2,]
+# update cell QC metrics
+mitoGenes <- grep("^MT-", rownames(pbmc.mat), value=TRUE) 
+#mitoGenes <- grep("^MT-", rownames(pbmc.mat), value=FALSE) 
+pbmc.sce <- addPerCellQC(pbmc.sce, subsets=list(Mito=mitoGenes))
+# update gene QC metrics
+pbmc.sce <- addPerFeatureQC(pbmc.sce, BPPARAM = bpp)
+colnames(colData(pbmc.sce))
+
+pbmc.sce.orig <- pbmc.sce
+pbmc.sce <- pbmc.sce[,pbmc.sce$subsets_Mito_percent < 20] # filter(pbmc.sce, subsets_Mito_percent < 20)
+pbmc.sce <- pbmc.sce[,pbmc.sce$detected > 1000 & pbmc.sce$detected < 4100]
+
+
+assay(pbmc.sce, "logcounts_raw") <- log2(counts(pbmc.sce) + 1)
+#p1 <- plotRLE(pbmc.sce[,1:50], exprs_values = "logcounts_raw", style = "full")
+#p2 <- plotRLE(pbmc.sce[,1:50], exprs_values = "logcounts_raw", style = "minimal")
+p1 <- plotRLE(pbmc.sce, exprs_values = "logcounts_raw", style = "full")
+p2 <- plotRLE(pbmc.sce, exprs_values = "logcounts_raw", style = "minimal")
+p1/p2
+
+
+raw.sce <- runPCA(pbmc.sce, exprs_values = "logcounts_raw")
+scater::plotPCA(raw.sce, colour_by = "sum")
+
+# lognorm:
+pbmc.seu <- Seurat::CreateSeuratObject(counts(pbmc.sce), project = "PBMC")
+pbmc.seu <- Seurat::NormalizeData(pbmc.seu)
+pbmc.seu.sce <- Seurat::as.SingleCellExperiment(pbmc.seu)
+pbmc.seu.sce <- calculateQCMetrics(pbmc.seu.sce)
+pbmc.seu.sce <- addPerCellQC(pbmc.seu.sce, subsets=list(Mito=mitoGenes))
+# update gene QC metrics
+pbmc.seu.sce <- addPerFeatureQC(pbmc.seu.sce, BPPARAM = bpp)
+p1 <- plotRLE(pbmc.seu.sce, style = "full")
+p2 <- plotRLE(pbmc.seu.sce, style = "minimal")
+p1/p2
+
+pbmc.seu.sce <- runPCA(pbmc.seu.sce)
+scater::plotPCA(pbmc.seu.sce, colour_by = "sum")
+
+# scran
+qclust <- quickCluster(pbmc.sce)
+pbmc.sce <- computeSumFactors(pbmc.sce, clusters = qclust)
+summary(sizeFactors(pbmc.sce))
+pbmc.sce <- logNormCounts(pbmc.sce)
+
+p1 <- plotRLE(pbmc.sce, exprs_values = "logcounts", exprs_logged = FALSE,
+        style = "full")
+p1 <- plotRLE(pbmc.sce, exprs_values = "logcounts", exprs_logged = FALSE,
+        outlier.size = 0.1,
+        outlier.alpha = 0.1,
+        style = "full")
+p2 <- plotRLE(pbmc.sce, exprs_values = "logcounts", exprs_logged = FALSE,
+        style = "minimal")
+p1
+p1/p2
+
+pbmc.sce <- runPCA(pbmc.sce)
+scater::plotPCA(pbmc.sce, colour_by = "sum")
+
+# in-house
+colData(pbmc.sce)$Barcode <- rownames(colData(pbmc.sce))
+colData(pbmc.sce)$SampleGroup <- rep("A", ncol(pbmc.sce)) # colData(pbmc.sce)$individual
+colData(pbmc.sce)$SampleName <- rep("jim", ncol(pbmc.sce)) # colData(pbmc.sce)$batch
+
+deconvRleMat <- calc_cell_RLE2(logcounts(pbmc.sce), logVal = "raw")
+colnames(deconvRleMat) <- pbmc.sce$Barcode
+
+# plot positive-count RLE
+
+dd2.deconv <- prepRleMat(deconvRleMat, sce = pbmc.sce)
+
+p2.deconv <- myRlePlot(dd2.deconv, sortBool=FALSE)
+#p2.deconv
+
+p2.deconv.b <- myRlePlot(dd2.deconv, sortBool=TRUE)
+#p2.deconv.b
+
+p2.deconv/p2.deconv.b
+```
+
+
+### log raw counts
+
+```{r comp_pca_logRaw_Caron_5hCellPerSpl}
+typeNorm <- "logRaw"
+
+# approximate SVD with irlba
+# irlba == implicitly restarted Lanczos bidiagonalization algorithm.
+options(BiocSingularParam.default=IrlbaParam())
+
+# Have raw counts on log2 scale:
+assay(sce, "logcounts_raw") <- log2(counts(sce) + 1)
+
+# Perform PCA:
+set.seed(123)
+sceRawPca <- runPCA(
+  sce,
+  exprs_values = "logcounts_raw"#,
+  #BSPARAM=IrlbaParam(),
+  #BSPARAM=RandomParam(),
+  #BPPARAM=bpp
+)
+```
+
+#### PCA
+
+PCA plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r plot_pca_logRaw_Caron_5hCellPerSpl}
+p <- plotPCA(
+    sceRawPca,
+    colour_by = "SampleName",
+    size_by = "sum",
+    shape_by = "SampleGroup"
+) + ggtitle(sprintf("PCA plot for log raw counts: %s", typeNorm))
+
+p
+```
+
+#### gene sparsity
+
+The plot below displays the 'empirical cumulative density function' (ECDF)
+of the number of cells genes are detected in.
+Its curve shows for any given number along the x-axis the percent of data points
+(here cells) that are below that value.
+
+```{r}
+# for gene, get number of cells where it is detected
+nbCellPerGene <- apply(counts(sce), 1, function(x){sum(x>0)})
+length(nbCellPerGene)
+head(nbCellPerGene)
+summary(nbCellPerGene)
+hist(nbCellPerGene, n=50)
+# ecdf
+ggplot(as.data.frame(nbCellPerGene), aes(nbCellPerGene)) + stat_ecdf(geom = "step")
+```
+
+#### RLE plot
+
+<!--
+https://github.com/NBISweden/excelerate-scRNAseq/blob/master/session-normalization/Normalization_with_answers.md
+
+plotRLE for raw, lognorm, scran, 
+-->
+
+
+The relative log expression (RLE) plot shows for each cell a boxplot of the
+deviations in expression of genes from their median count.   
+
+<!--
+Cell-wise RLE for the '`r typeNorm`' counts in the `r setName` set.
+Each cell is represented by a box plot showing the inter-quartile range in grey,
+wiskers colour-coded by Sample.Name and the median as a black circle. 
+-->
+
+<!--
+Remember effectiveness is described in the Hemberg course for a SMART-seq data set,
+for genes whose median count is above 0.
+Here the 10X data is much sparser and only a very small fraction of genes have
+a positive median. So RLE is computed for each gene using these positive counts.
+-->
+
+
+```{r}
+# compute RLE, with positive counts
+# return matrix
+# log2 scale
+
+calc_cell_RLE2 <- function(expr_mat, logVal = "raw") 
+{
+  # define RLE_gene function:
+  # compute RLE for a given gene
+  # then compute RLE: log(count in cell / median count across cells)/log2
+  # if 0 UMI in cell, then RLE is 0.
+    RLE_gene_raw <- function(x) {
+	    ##print(class(x))
+      x <- unlist(x)
+      #print(length(x))
+      #print(median(unlist(x)))
+      #print(sum(unlist(x)>0)) # number of cells where the gene is detected
+      
+      # get non-null values to compute median on:
+      posCountInd <- which(x > 0)
+      #print(length(posCountInd))
+      #print(posCountInd[1:3])
+      y <- x[posCountInd]
+      medy <- median(y)
+      #print(y[1:3])
+      #print(length(y))
+      #print(median(y))
+      
+#      z <- lapply(x, function(i) {
+#        #if(i==0) {0}
+#        if(i==0) {NA}
+#        else {
+#          log((i + 1)/(medy + 1))/log(2)
+#        }
+#      }
+#      )
+
+      z <- rep(NA, length(x))
+      posCountInd <- which(x > 0)
+      y <- x[posCountInd]
+      z[posCountInd] <- lapply(y,
+			       function(i) { log((i + 1)/(medy + 1))/log(2) }
+			       )
+      z <- unlist(z)
+      z
+    }
+
+    RLE_gene_log <- function(x) {
+      x <- unlist(x)
+      z <- rep(NA, length(x))
+      # get non-null values to compute median on:
+      posCountInd <- which(x > 0)
+      y <- x[posCountInd]
+      # if log2 scale already
+	#print(x[posCountInd][1:3])
+	z[posCountInd] <- y - median(y)
+	#print(x[posCountInd][1:3])
+      z
+    }
+
+        RLE_gene_sct <- function(x) {
+      x <- unlist(x)
+	z <- x - median(x)
+      z
+    }
+
+
+    if (logVal == "raw") {
+	RLE_matrix <- t(apply(expr_mat, 1, RLE_gene_raw))
+    } else if (logVal == "sct") {
+	RLE_matrix <- t(apply(expr_mat, 1, RLE_gene_sct))
+    } else {
+	RLE_matrix <- t(apply(expr_mat, 1, RLE_gene_log))
+    }
+    return(RLE_matrix)
+    cell_RLE <- apply(RLE_matrix, 2, median, na.rm = T)
+    #print(cell_RLE)
+    return(cell_RLE)
+}
+```
+
+```{r}
+# compute RLE with positive counts
+rawRleMat2 <- calc_cell_RLE2(counts(sce))
+colnames(rawRleMat2) <- sce$Barcode
+rawRleMat2[1:5,1:3]
+```
+
+```{r, eval=FALSE}
+rawRleMat2[,1]
+summary(rawRleMat2[,1])
+boxplot(rawRleMat2[,1:2])
+```
+
+```{r}
+# prepare long RLE matrix for plotting
+dd2 <- prepRleMat(rawRleMat2)
+#summary(dd2$rle)
+#hist(dd2$rle,n=100)
+#boxplot(dd2$rle)
+```
+
+```{r}
+# plot RLE
+# no sorting of cells on RLE
+p2.raw <- myRlePlot(dd2, sortBool=FALSE)
+p2.raw
+```
+
+```{r}
+# plot RLE
+# with sorting of cells on RLE for each sample
+p2.raw.b <- myRlePlot(dd2, sortBool=TRUE)
+p2.raw.b
+```
+
+```{r}
+p2.raw/p2.raw.b
+```
+
+
+<!-- rawRleMat - positive median -->
+
+```{r, eval=FALSE}
+rawRleMat <- calc_cell_RLE(counts(sce)) # for genes with positive median
+colnames(rawRleMat) <- sce$Barcode
+
+# dev - NAs
+x <- apply(rawRleMat, 1, function(x) sum(!is.na(x)))
+summary(x)
+table(x>0)
+
+# for each cell:
+# median RLE across genes:
+cell_RLE <- apply(rawRleMat, 2, median, na.rm = T)
+# number of non-NA RLE across genes:
+cell_RLE.noNa <- apply(rawRleMat, 2, function(x) sum(!is.na(x)))
+```
+
+```{r, eval=FALSE}
+#plot(cell_RLE)
+#plot(cell_RLE.noNa, cell_RLE)
+
+cell_RLE_df <- data.frame(
+  "Barcode" = colData(sce)$Barcode,
+  "SampleName" = colData(sce)$SampleName,
+  cell_RLE.noNa,
+  cell_RLE
+)
+
+plot(cell_RLE)
+p <- ggplot(cell_RLE_df, aes(x=Barcode, y=cell_RLE, col=SampleName)) + 
+  geom_point(alpha=0.8, shape=16)
+p + facet_wrap(~SampleName)
+
+#ggplot(cell_RLE_df, aes(cell_RLE.noNa, cell_RLE)) + 
+#  geom_point(alpha=0.3, shape=16) + 
+#  geom_density_2d(size = 0.3) +
+#  geom_abline(intercept = 0, slope = 0, color='red')
+```
+
+```{r, eval=FALSE}
+#boxplot(calc_cell_RLE(counts(sce)),
+boxplot(calc_cell_RLE(counts(sce)[,1:50]),
+        col = "grey50",
+        ylab = "RLE",
+        #ylim=c(-1,1),
+        main = ""
+        )
+```
+
+
+```{r, eval=FALSE}
+# use base boxplot()
+# ok but already have ggplot version
+
+cellColor <- as.numeric(factor(colData(sce)$SampleName))
+#boxplot(calc_cell_RLE(counts(sce)),
+#boxplot(calc_cell_RLE(counts(sce)[,1:2000]),
+boxplot(calc_cell_RLE(counts(sce)),
+        #col = "grey50",
+        col=cellColor,
+        boxcol=cellColor,
+        ylab = "RLE",
+        #ylim=c(-1,1),
+        outline = FALSE,
+        medcol = "red",
+        whisklty = 1,
+        whisklwd = 0,
+        staplelwd = 0,
+        main = ""
+        )
+abline(h=0)
+```
+
+<!-- edgeR::calcNormFactors -->
+
+```{r, eval=FALSE}
+# edgeR RLE normalisation
+# ok but positive median, and base boxplot and slow
+
+# https://gitlab.svi.edu.au/biocellgen-public/mig_2019_scrnaseq-workshop/-/blob/7932cb90e1e73975d5db3b319951e06bebbbeab3/11-exprs-norm.Rmd
+
+# Calculate normalization factors to scale the raw library sizes. 
+dge <- edgeR::calcNormFactors(
+  sce,
+  method = "RLE",
+  lib.size = rep(1, ncol(sce))
+  )
+class(dge) # DGEList
+
+boxplot(dge$counts,
+        #col = "grey50",
+        col = cellColor,
+        boxcol = cellColor,
+        ylab = "RLE",
+        ylim = c(-3,3),
+        #outline = !FALSE,
+        #outpch = 2,
+        outline = FALSE,
+        medcol = "red",
+        whisklty = 1,
+        whisklwd = 1,
+        staplelwd = 1,
+        main = ""
+)
+rm(dge)
+```
+
+<!-- scaterlegacy: needs oldSCESet - SKIP -->
+
+```{r, eval=FALSE}
+# scaterlegacy:
+sceLega <- sce
+sceLega <- scaterlegacy::normaliseExprs(sceLega,
+                           method = "RLE", 
+                           lib.size = rep(1, ncol(sceLega)))
+# ...  'object' must be an SCESet
+```
+
+<!-- edgeR::calcNormFactors on count matrix - all NAs - SKIP -->
+
+```{r, eval=FALSE}
+# edgeR
+sceEdgeR <- sce
+# counts(sceEdgeR) is dgCMatrix
+# method="RLE" is the scaling factor method proposed by Anders and Huber (2010). We call it "relative log expression", as median library is calculated from the geometric mean of all columns and the median ratio of each sample to the median library is taken as the scale factor.
+sizeFactors(sceEdgeR) <- edgeR::calcNormFactors(counts(sceEdgeR), method = "RLE")
+# ... all NAs
+sceEdgeR <- logNormCounts(sceEdgeR)
+# ... Error in .local(x, ...) : size factors should be positive
+
+# https://gitlab.svi.edu.au/biocellgen-public/mig_2019_scrnaseq-workshop/-/blob/7932cb90e1e73975d5db3b319951e06bebbbeab3/11-exprs-norm.Rmd
+scater::plotPCA(sceEdgeR,
+                colour_by = "batch",
+                size_by = "total_features",
+                shape_by = "individual",
+                exprs_values = "norm_counts")
+
+boxplot(calc_cell_RLE(norm_counts(sceEdgeR)),
+        col = "grey50",
+        ylab = "RLE",
+        main = "", ylim=c(-1,1))
+```
+
+<!-- RLE - positive median - in-house plotRLE -->
+
+```{r, eval=FALSE}
+dd2.raw <- prepRleMat(rawRleMat)
+p2.raw <- myRlePlot(dd2.raw, sortBool=FALSE)
+p2.raw
+```
+
+```{r, eval=FALSE}
+p2.raw.b <- myRlePlot(dd2.raw, sortBool=TRUE)
+p2.raw.b
+```
+
+```{r, eval=FALSE}
+p2 + facet_wrap(~SampleGroup)
+```        
+        
+<!-- plotRLE with sceRawPca and logcounts_raw: 'fail' -->
+
+```{r plot_rle_logRaw_Caron_5hCellPerSpl_ex, cache.lazy = FALSE, eval=FALSE}
+# plotRLE computes deviations from median
+# issue with NAs:
+# positive-median genes only, very few
+# so undefined RLE for most cells.
+
+p <- plotRLE(
+    sceRawPca,
+    exprs_values = "logcounts_raw",
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+<!-- plotRLE with sceRawPca and logcounts_raw - sorted: 'fail' -->
+
+```{r plot_rle_logRaw_Caron_5hCellPerSpl, cache.lazy = FALSE, eval=FALSE}
+# plotRLE computes deviations from median
+# issue with NAs:
+# positive-median genes only, very few
+# so undefined RLE for most cells.
+
+# sort cell by increasing RLE, for each sample
+
+expMat <- log2(counts(sceRawPca)+1)
+expMat <- as(expMat, "matrix") 
+featMedian <- rowMedians(expMat)
+medDev <- expMat - featMedian
+# cell-wise deviation: compute median
+medDev.cellWise <- colMedians(medDev)
+
+medDev.df <- data.frame(
+  "Barcode" = colData(sceRawPca)$Barcode,
+  "SampleName" = colData(sceRawPca)$SampleName,
+  "SampleGroup" = colData(sceRawPca)$SampleGroup,
+  "medDevCellWise" = medDev.cellWise
+)
+
+medDev.df.sorted <- medDev.df %>%
+  group_by(SampleName) %>%
+  arrange(medDevCellWise, .by_group = TRUE)
+
+ddToShowSort <- medDev.df.sorted$Barcode
+
+ddToShowSortInd <- match(ddToShowSort,
+                         colData(sceRawPca)$Barcode)
+
+p <- plotRLE(
+    sceRawPca,
+    ordering = ddToShowSortInd,
+    exprs_values = "logcounts_raw",
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+```{r, eval=FALSE}
+#> scater:::.plotRLE_minimal
+scater_plotRLE_minimalfunction (df, colour_by, ncol) 
+{
+    plot_out <- ggplot(df, aes_string(x = "x", fill = colour_by)) +
+    # IR in gray60
+    geom_segment(aes_string(xend = "x",
+                            y = "q25",
+                            yend = "q75"),
+                 colour = "gray60") +
+    # upper wisker in colour_by
+    geom_segment(aes_string(xend = "x",
+                            y = "q75",
+                            yend = "whiskMax",
+                            colour = colour_by)) +
+    # lower wisker in colour_by
+    geom_segment(aes_string(xend = "x",
+                            y = "q25",
+                            yend = "whiskMin",
+                            colour = colour_by)) +
+    # median as point
+    geom_point(aes_string(y = "q50"),
+               shape = 21) +
+    # abline for y == 0 in gray40
+    geom_hline(yintercept = 0,
+               colour = "gray40",
+               alpha = 0.5) +
+    # labels etc
+    ylab("Relative log expression") +
+    xlab("Sample") +
+    theme_classic() +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.line.x = element_blank())
+    plot_out
+}
+#<bytecode: 0x559e619760e0>
+#<environment: namespace:scater>
+```
+
+### log CPM
+
+```{r comp_pca_logCpm_Caron_5hCellPerSpl, cache.lazy = FALSE}
+typeNorm <- "logCpm"
+
+assay(sce, "logCpm") <- log2(calculateCPM(sce, size_factors = NULL)+1)
+
+logCpmPca <- runPCA(
+  sce,
+  exprs_values = "logCpm"#,
+  #BPPARAM=bpp
+)
+```
+
+PCA plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r plot_pca_logCpm_Caron_5hCellPerSpl}
+p <- plotPCA(
+    logCpmPca,
+    colour_by = "SampleName",
+    size_by = "sum",
+    shape_by = "SampleGroup"
+) + ggtitle(sprintf("PCA plot: %s", typeNorm))
+
+p
+```
+
+<!--
+Cell-wise RLE for the '`r typeNorm`' counts in the `r setName` set.
+-->
+
+<!-- plotRLE fails -->
+
+```{r plot_rle_logCpm_Caron_5hCellPerSpl, cache.lazy = FALSE, eval=FALSE}
+p <- plotRLE(
+    sce,
+    exprs_values = "logCpm",
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+
+```{r, eval=FALSE}
+# 2.2% of points are not NA
+# 390 genes out of 17700
+cpmRleMat <- calc_cell_RLE(calculateCPM(sce, size_factors = NULL))
+colnames(cpmRleMat) <- sce$Barcode
+```
+
+```{r, eval=FALSE}
+# ok but base boxplot
+
+cellColor <- as.numeric(factor(colData(sce)$SampleName))
+#boxplot(calc_cell_RLE(counts(sce)),
+#boxplot(calc_cell_RLE(counts(sce)[,1:2000]),
+boxplot(cpmRleMat,
+        #col = "grey50",
+        col=cellColor,
+        boxcol=cellColor,
+        ylab = "RLE",
+        #ylim=c(-1,1),
+        outline = FALSE,
+        medcol = "red",
+        whisklty = 1,
+        whisklwd = 0,
+        staplelwd=0,
+        main = ""
+        )
+abline(h=0)
+```
+
+```{r, eval=FALSE}
+# fine
+# but with positive-median genes
+# only 390 out of 17700
+
+dd2.cpm <- prepRleMat(cpmRleMat)
+p2.cpm <- myRlePlot(dd2.cpm, sortBool=FALSE)
+p2.cpm
+p2.cpm.b <- myRlePlot(dd2.cpm, sortBool=TRUE)
+p2.cpm.b
+
+p2.cpm/p2.cpm.b
+```
+
+<!-- plot positive-count RLE -->
+
+```{r}
+# RLE with positive counts
+cpmRleMat <- calc_cell_RLE2(calculateCPM(sce, size_factors = NULL))
+colnames(cpmRleMat) <- sce$Barcode
+```
+
+```{r}
+# plot positive-count RLE
+
+dd2.cpm <- prepRleMat(cpmRleMat)
+
+p2.cpm <- myRlePlot(dd2.cpm, sortBool=FALSE)
+#p2.cpm
+
+p2.cpm.b <- myRlePlot(dd2.cpm, sortBool=TRUE)
+#p2.cpm.b
+
+p2.cpm/p2.cpm.b
+```
+
+### scran
+
+Normalised counts are stored in the 'logcounts' assay
+
+```{r comp_pca_deconv_Caron_5hCellPerSpl}
+typeNorm <- "scran"
+
+scranPca <- runPCA(
+  sceDeconv,
+  exprs_values = "logcounts"#,
+  #BPPARAM=bpp
+)
+```
+
+PCA plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r plot_pca_deconv_Caron_5hCellPerSpl}
+p <- plotPCA(
+    scranPca,
+    colour_by = "SampleName",
+    size_by = "sum",
+    shape_by = "SampleGroup"
+) + ggtitle(sprintf("PCA plot: %s", typeNorm))
+
+p
+```
+
+TSNE plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r comp_tsne_deconv_Caron_5hCellPerSpl}
+typeNorm <- "scran"
+
+reducedDim(sceDeconv, "TSNE_scran") <- reducedDim(
+  runTSNE(sceDeconv,
+	  exprs_values = "logcounts",
+	  BPPARAM=bpp),
+  "TSNE"
+)
+```
+
+```{r plot_tsne_deconv_Caron_5hCellPerSpl}
+p <- plotReducedDim(
+  sceDeconv,
+  dimred = "TSNE_scran",
+  colour_by = "SampleName",
+  size_by = "sum",
+  shape_by = "SampleGroup"
+) + ggtitle(sprintf("TSNE plot: %s", typeNorm))
+
+p
+```
+
+UMAP plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r comp_umap_deconv_Caron_5hCellPerSpl}
+typeNorm <- "scran"
+
+reducedDim(sceDeconv, "UMAP_scran") <- reducedDim(
+  runUMAP(sceDeconv,
+	  exprs_values = "logcounts",
+	  BPPARAM=bpp),
+  "UMAP"
+)
+```
+
+```{r plot_umap_deconv_Caron_5hCellPerSpl}
+p <- plotReducedDim(
+  sceDeconv,
+  dimred = "UMAP_scran",
+  colour_by = "SampleName",
+  size_by = "sum",
+  shape_by = "SampleGroup"
+) + ggtitle(sprintf("UMAP plot: %s", typeNorm))
+
+p
+```
+
+<!--
+Cell-wise RLE for the '`r typeNorm`' counts in the `r setName` set.
+-->
+
+```{r}
+summary(sizeFactors(scranPca))
+```
+
+<!-- plotRLE with scranPca: 'fail'
+plotRLE has two styles: full and minimal
+the full style shows the usual ggplot boxplot inc outliers
+the minimal style shows a tufte-like boxplot, inc whiskers but no outliers
+-->
+
+```{r plot_rle_deconv_Caron_5hCellPerSpl, eval=FALSE}
+randCells <- sort(sample(1:ncol(scranPca), 1000)) # 1000 cells only
+p <- plotRLE(
+    #scranPca,
+    #scranPca[,1:50],
+    scranPca[,randCells],
+    exprs_values = "logcounts",
+    exprs_logged = FALSE,
+    outlier.size = 0.1,
+    outlier.alpha = 0.1,
+    style = "full", # slow with 1000s of cells.
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+```{r}
+# sort cells by cell-wise RLE for each sample group
+# ... but cell-wise RLE may well be 0 for all cell_sparsity
+# ... so no effective ordering
+expMat <- log2(logcounts(scranPca)[,randCells]+1)
+expMat <- as(expMat, "matrix")
+featMedian <- rowMedians(expMat)
+medDev <- expMat - featMedian
+# cell-wise deviation: compute median
+medDev.cellWise <- colMedians(medDev)
+
+medDev.df <- data.frame(
+  "Barcode" = colData(sceRawPca)$Barcode[randCells],
+  "SampleName" = colData(sceRawPca)$SampleName[randCells],
+  "SampleGroup" = colData(sceRawPca)$SampleGroup[randCells],
+  "medDevCellWise" = medDev.cellWise
+)
+
+medDev.df.sorted <- medDev.df %>%
+  group_by(SampleName) %>%
+  arrange(medDevCellWise, .by_group = TRUE)
+
+ddToShowSort <- medDev.df.sorted$Barcode
+
+ddToShowSortInd <- match(ddToShowSort,
+                         colData(sceRawPca)$Barcode[randCells])
+
+p <- plotRLE(
+    #scranPca,
+    #scranPca[,1:50],
+    scranPca[,randCells],
+    ordering = ddToShowSortInd,
+    exprs_values = "logcounts",
+    exprs_logged = FALSE,
+    outlier.size = 0.1,
+    outlier.alpha = 0.1,
+    style = "full", # slow with 1000s of cells.
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+```{r , eval=FALSE}
+# minimal
+#randCells <- sort(sample(1:ncol(scranPca), 1000)) # 1000 cells only
+p <- plotRLE(
+    #scranPca,
+    #scranPca[,1:50],
+    scranPca[,randCells],
+    exprs_values = "logcounts",
+    exprs_logged = FALSE,
+    #outlier.size = 0.1,
+    #outlier.alpha = 0.1,
+    #style = "full", # slow with 1000s of cells.
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+```{r}
+#deconvRleMat <- calc_cell_RLE2(logcounts(scranPca), logVal = "log2")
+#deconvRleMat <- calc_cell_RLE2(logcounts(scranPca)[,1:2000], logVal = "raw")
+#colnames(deconvRleMat) <- sce$Barcode[1:2000]
+
+randCells <- sample(1:ncol(scranPca), 1000) # 1000 cells only
+
+deconvRleMat <- calc_cell_RLE2(logcounts(scranPca), logVal = "raw")
+colnames(deconvRleMat) <- scranPca$Barcode
+
+#dd2.deconv <- prepRleMat(deconvRleMat[,randCells], sce = scranPca[,randCells])
+dd2.deconv <- prepRleMat(deconvRleMat, sce = scranPca)
+
+p2.deconv <- myRlePlot(dd2.deconv, sortBool=FALSE)
+#p2.deconv <- myRlePlot(dd2.deconv, sortBool=FALSE, bcToGet = gsub("-", ".", colnames(deconvRleMat)[1:100]))
+p2.deconv
+
+p2.deconv.b <- myRlePlot(dd2.deconv, sortBool=TRUE)
+#p2.deconv.b <- myRlePlot(dd2.deconv, sortBool=TRUE, bcToGet = gsub("-", ".", colnames(deconvRleMat)[1:100]))
+p2.deconv.b
+
+p2.deconv/p2.deconv.b
+```
+
+```{r}
+colSums(!is.na(deconvRleMat[,])) %>% summary
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
+#   1008    1681    1984    2185    2548    4061
+```
+
+### SCTransform
+
+<!--
+Remember we kept the sctransform counts separate from the deconvolution counts
+because the former filters out genes that are expressed in few cells by itself
+-->
+
+```{r comp_pca_sct_Caron_5hCellPerSpl, cache.lazy = FALSE}
+#tmpFn <- str_glue("{projDir}/{outDirBit}/{setName}_postSct{setSuf}.Rds")
+#sce <- readRDS(tmpFn)
+
+typeNorm <- "sctrans"
+
+reducedDim(sce, "PCA_sctrans_norm") <- reducedDim(
+  runPCA(sce,
+	 exprs_values = "sctrans_norm"#,
+	 #BPPARAM=bpp
+	 ),
+  "PCA"
+)
+```
+
+PCA plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r plot_pca_sct_Caron_5hCellPerSpl}
+p <- plotReducedDim(
+  sce,
+  dimred = "PCA_sctrans_norm",
+  colour_by = "SampleName",
+  size_by = "sum",
+  shape_by = "SampleGroup"
+) + ggtitle(sprintf("PCA plot: %s", typeNorm))
+
+p
+```
+
+<!--
+somewhat surprising PCA plot
+with cells tight along PC1 and PC2
+-->
+
+```{r}
+percent.var <- attr(reducedDim(sce), "percentVar")
+chosen.elbow <- PCAtools::findElbowPoint(percent.var)
+chosen.elbow
+```
+
+```{r}
+plot(percent.var, xlab="PC", ylab="Variance explained (%)")
+abline(v=chosen.elbow, col="red")
+```
+
+TSNE plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r comp_tsne_sct_Caron_5hCellPerSpl, cache.lazy = FALSE}
+typeNorm <- "sctrans"
+
+reducedDim(sce, "TSNE_sctrans_norm") <- reducedDim(
+  runTSNE(sce,
+	  exprs_values = "sctrans_norm",
+	  BPPARAM=bpp),
+  "TSNE"
+)
+```
+
+```{r plot_tsne_sct_Caron_5hCellPerSpl}
+p <- plotReducedDim(
+  sce,
+  dimred = "TSNE_sctrans_norm",
+  colour_by = "SampleName",
+  size_by = "sum",
+  shape_by = "SampleGroup"
+) + ggtitle(sprintf("TSNE plot: %s", typeNorm))
+
+p
+```
+
+UMAP plot for the '`r typeNorm`' counts in the `r setName` set.
+
+```{r comp_umap_sct_Caron_5hCellPerSpl, cache.lazy = FALSE}
+typeNorm <- "sctrans"
+
+reducedDim(sce, "UMAP_sctrans_norm") <- reducedDim(
+  runUMAP(sce,
+	  exprs_values = "sctrans_norm",
+	  BPPARAM=bpp),
+  "UMAP"
+)
+```
+
+```{r plot_umap_sct_Caron_5hCellPerSpl}
+p <- plotReducedDim(
+  sce,
+  dimred = "UMAP_sctrans_norm",
+  colour_by = "SampleName",
+  size_by = "sum",
+  shape_by = "SampleGroup"
+) + ggtitle(sprintf("UMAP plot: %s", typeNorm))
+
+p
+```
+
+Cell-wise RLE for the '`r typeNorm`' counts in the `r setName` set.
+Each cell is represented by a box plot showing the inter-quartile range in grey,
+wiskers colour-coded by Sample.Name and the median as a black circle. 
+
+```{r plot_rle_sct_Caron_5hCellPerSpl, cache.lazy = FALSE}
+typeNorm <- "sctrans"
+p <- plotRLE(
+    sce,
+    exprs_values = "sctrans_norm",
+    exprs_logged = !FALSE,
+    outlier.size = 0.1,
+    outlier.alpha = 0.1,
+    style = "full",
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+```{r plot_rleMini_sct_Caron_5hCellPerSpl, cache.lazy = FALSE}
+typeNorm <- "sctrans"
+p <- plotRLE(
+    sce,
+    exprs_values = "sctrans_norm",
+    exprs_logged = !FALSE,
+    #outlier.size = 0.1,
+    #outlier.alpha = 0.1,
+    style = "minimal",
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+```{r}
+expMat <- assay(sce, "sctrans_norm") # log2(counts(sceRawPca)+1)
+expMat <- as(expMat, "matrix") 
+featMedian <- rowMedians(expMat)
+medDev <- expMat - featMedian
+# cell-wise deviation: compute median
+medDev.cellWise <- colMedians(medDev)
+
+medDev.df <- data.frame(
+  "Barcode" = colData(sce)$Barcode,
+  "SampleName" = colData(sce)$SampleName,
+  "SampleGroup" = colData(sce)$SampleGroup,
+  "medDevCellWise" = medDev.cellWise
+)
+
+medDev.df.sorted <- medDev.df %>%
+  group_by(SampleName) %>%
+  arrange(medDevCellWise, .by_group = TRUE)
+
+ddToShowSort <- medDev.df.sorted$Barcode
+
+ddToShowSortInd <- match(ddToShowSort,
+                         gsub("[0-9]+_","",colData(sce)$Barcode))
+
+p <- plotRLE(
+    sce,
+    ordering = ddToShowSortInd,
+    exprs_values = "sctrans_norm",
+    exprs_logged = !FALSE,
+    #outlier.size = 0.1,
+    #outlier.alpha = 0.1,
+    style = "minimal",
+    colour_by = "SampleName"
+) + ggtitle(sprintf("RLE plot: %s", typeNorm))
+
+p
+```
+
+
+```{r}
+b <- ggplot_build(p)
+```
+
+```{r, eval=FALSE}
+sctRleMat <- calc_cell_RLE(assay(sce, "sctrans_norm"))
+colnames(sctRleMat) <- sce$Barcode
+
+dd2.sct <- prepRleMat(sctRleMat)
+p2.sct <- myRlePlot(dd2.sct, sortBool=FALSE)
+
+p2.sct
+```
+
+
+```{r, eval=FALSE}
+p2.sct.b <- myRlePlot(dd2.sct, sortBool=TRUE)
+p2.sct.b
+```
+
+```{r}
+sctRleMat2 <- calc_cell_RLE2(assay(sce, "sctrans_norm"), logVal = "sct")
+colnames(sctRleMat2) <- sce$Barcode
+
+dd2.sct2 <- prepRleMat(sctRleMat2, sce = sce)
+p3.sct2 <- myRlePlot(dd2.sct2, sortBool=FALSE, qCutBool = FALSE)
+#p3.sct2
+
+p3.sct2.b <- myRlePlot(dd2.sct2, sortBool=TRUE, qCutBool = FALSE)
+#p3.sct2.b
+```
+
+```{r}
+p3.sct2/p3.sct2.b # slow with 1000s of cells and 18000 genes ... and large.
+```
+
+
+```{r}
+p/p2
+p/p2/p3
+```
+
+## Session information
+
+```{r}
+sessionInfo()
+```
