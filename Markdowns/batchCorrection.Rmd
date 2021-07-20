@@ -3,11 +3,6 @@ title: "CRUK CI Summer School 2020 - introduction to single-cell RNA-seq analysi
 subtitle: 'batch correction - 500 cells per sample'
 
 output:
-  html_notebook:
-    code_folding: hide
-    toc: yes
-    toc_float: yes
-    number_sections: true
   html_document:
     df_print: paged
     toc: yes
@@ -15,38 +10,13 @@ output:
     code_folding: hide
   html_book:
     code_folding: hide
-params:
-  projDir: "/ssd/personal/baller01/20200511_FernandesM_ME_crukBiSs2020"
-  dirRel: ".."
-  inpDirBit: "AnaWiSce/Ana1"
-  outDirBit: "AnaWiSce/Ana1"
-  cacheBool: FALSE
-  bookType: "mk"
-  setName: "GSM3872442"
-  setSuf: "_allCells"
-  splSetToGet: "dummy"
-  dsiSuf: '_dummy'
 ---
-
-```{r batch_GSM3872442.knitr_options, include=FALSE, echo=FALSE, dev="CairoPNG"}
-cacheBool <- params$cacheBool
-require(knitr)
-opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE, cache=cacheBool)
-knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(eval = TRUE) 
-options(stringsAsFactors = FALSE)
-opts_chunk$set(fig.width=7, fig.height=7)
-#opts_chunk$set(dev = c("png"))
-options(bitmapType='cairo')
-knitr::opts_chunk$set(dev="CairoPNG")
-set.seed(123) # for reproducibility
-```
 
 # Batch correction - GSM3872442 set
 
 ## Learning objectives
 
-* Understand different batch correction methods
+* Understand different batch correction methods using one sample sequenced in two different runs.
 
 ## Data
 
@@ -54,22 +24,6 @@ GSM3872442 is a single PBMMC sample sequenced as a pool of two libraries:
 SRR9264351 and SRR9264352.
 
 We will use this sample to illustrate batch correction.
-
-```{r GSM3872442_variables_norm, cache=FALSE}
-qcPlotDirBit <- "Plots/Norm" # not used TODO
-projDir <- params$projDir
-dirRel <- params$dirRel
-outDirBit <- params$outDirBit
-cacheBool <- params$cacheBool
-setName <- params$setName
-setSuf <- params$setSuf
-
-if(params$bookType == "mk") {
-	setName <- "GSM3872442"
-	setSuf <- "_allCells"
-	dirRel <- ".."
-}
-```
 
 ```{r libraries_batch_GSM3872442, message=FALSE, include=FALSE}
 library(scater)
@@ -82,18 +36,13 @@ library(Cairo)
 
 Load object 
 
-```{r GSM3872442_readIn, cache=FALSE}
-setSuf <- ""
-
-# Read object in:
-tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postQc%s.Rds",
-		 projDir, outDirBit, "caron", setSuf)
-sce <- readRDS("Robjects/caron_postQc_5hCellPerSpl.Rds")
+```{r GSM3872442_readIn, cache=FALSE, eval=FALSE}
+sce <- readRDS("~/Downloads/caron_sce_nz_postQc.Rds")
 ```
 
 Select the GSM3872442 cells:
 
-```{r subset_cells_batch_GSM3872442}
+```{r subset_cells_batch_GSM3872442, eval=FALSE}
 sample1.nz.sce <- SingleCellExperiment(list(counts=counts(sce[, sce$Run %in% c("SRR9264351")])),
                                        colData=colData(sce[, sce$Run %in% c("SRR9264351")]))
 
@@ -127,10 +76,10 @@ Re-pool:
 ```{r repool_batch_GSM3872442}
 # recombine the normalized samples together
 all.samp.exprs <- do.call(cbind,
-                          list("SRR9264351"=exprs(sample1.nz.sce),
-                               "SRR9264352"=exprs(sample2.nz.sce)))
-colnames(all.samp.exprs) <- c(as.character(colData(sample1.nz.sce)$Barcode),
-                              as.character(colData(sample2.nz.sce)$Barcode))
+                          list("SRR9264351"=exprs(sample1.sce),
+                               "SRR9264352"=exprs(sample2.sce)))
+colnames(all.samp.exprs) <- c(as.character(colData(sample1.sce)$Barcode),
+                              as.character(colData(sample2.sce)$Barcode))
 ```
 
 For the PCA we want to quickly select the genes that are most informative. We will use the top 2000 genes with the highest variance.
@@ -139,7 +88,6 @@ For the PCA we want to quickly select the genes that are most informative. We wi
 gene.variances <- apply(all.samp.exprs, 1, var)
 names(gene.variances) <- rownames(all.samp.exprs)
 highly.variable.genes <- names(gene.variances[order(gene.variances, decreasing=TRUE)])[1:2000]
-rm(gene.variances)
 ```
 
 Perform PCA:
@@ -155,17 +103,15 @@ separate.hvg.pcs$Cell <- colnames(all.samp.exprs) # set the sample column as the
 
 # combine the PCs with the sample information into a single data frame for plotting
 samples.info <- data.frame("Cell"=colnames(all.samp.exprs),
-                           "Run"=c(rep("SRR9264351", ncol(sample1.nz.sce)), 
-                                   rep("SRR9264352", ncol(sample2.nz.sce))))
+                           "Run"=c(rep("SRR9264351", ncol(sample1.sce)), 
+                                   rep("SRR9264352", ncol(sample2.sce))))
 
 # merge the two data frames together
 separate.pca.merge <- merge(separate.hvg.pcs, samples.info, by='Cell')
 
-# tidy
-rm(all.samp.exprs, separate.hvg.pca, separate.hvg.pcs, samples.info)
 ```
 
-```{r sep_plot_pca_batch_GSM3872442, eval=FALSE, include=FALSE}
+```{r sep_plot_pca_batch_GSM3872442}
 ggplot(separate.pca.merge, aes(x=PC1, y=PC2, fill=Run)) +
   geom_point(shape=21, size=3) +
   theme_minimal()
@@ -174,9 +120,10 @@ ggplot(separate.pca.merge, aes(x=PC1, y=PC2, fill=Run)) +
 Plot PC1-PC2 plane, with cells colored by 'Run' (and sized according to library size):
 
 ```{r sep_cbind_batch_GSM3872442}
-sce.sep <- cbind(sample1.nz.sce, sample2.nz.sce)
-rm(sample1.nz.sce, sample2.nz.sce)
+sce.sep <- cbind(sample1.sce, sample2.sce)
+
 sce.sep <- runPCA(sce.sep)
+
 plotPCA(sce.sep, colour_by="Run", size_by = "sum")
 ```
 
@@ -188,23 +135,22 @@ plotTSNE(sce.sep, colour_by="Run", size_by = "sum")
 ```{r sep_umap_batch_GSM3872442}
 sce.sep <- runUMAP(sce.sep, dimred="PCA")
 plotUMAP(sce.sep, colour_by="Run", size_by = "sum")
-rm(sce.sep)
+
 ```
 
 ## Normalise batches together
 
 ```{r tog_norm_batch_GSM3872442}
-sample3.nz.sce <- SingleCellExperiment(list(counts=counts(sce[, sce$Run %in% c("SRR9264351", "SRR9264352")])),
+sample3.sce <- SingleCellExperiment(list(counts=counts(sce[, sce$Run %in% c("SRR9264351", "SRR9264352")])),
                                        colData=colData(sce[, sce$Run %in% c("SRR9264351", "SRR9264352")]))
 
-sample3.clusters <- quickCluster(sample3.nz.sce, method="igraph")
-sample3.nz.sce <- computeSumFactors(sample3.nz.sce, min.mean=0.1, cluster=sample3.clusters)
-sample3.nz.sce <- logNormCounts(sample3.nz.sce)
+sample3.qclusters <- quickCluster(sample3.sce, method="igraph")
+sample3.sce <- computeSumFactors(sample3.sce, min.mean=0.1, cluster=sample3.qclusters)
+sample3.sce <- logNormCounts(sample3.sce)
 
-pool.exprs <- exprs(sample3.nz.sce)
-colnames(pool.exprs) <- gsub(colData(sample3.nz.sce)$Barcode, pattern="-", replacement=".")
+pool.exprs <- exprs(sample3.sce)
+colnames(pool.exprs) <- gsub(colData(sample3.sce)$Barcode, pattern="-", replacement=".")
 
-rm(sample3.clusters, sce)
 ```
 
 Find the 2000 genes with the highest variance:
@@ -213,7 +159,7 @@ Find the 2000 genes with the highest variance:
 gene.variances <- apply(pool.exprs, 1, var)
 names(gene.variances) <- rownames(pool.exprs)
 highly.variable.genes <- names(gene.variances[order(gene.variances, decreasing=TRUE)])[1:2000]
-rm(gene.variances)
+
 ```
 
 Perform PCA:
@@ -228,12 +174,12 @@ combined.hvg.pcs$Cell <- colnames(pool.exprs) # set the sample column as the cel
 
 # combine the PCs with the sample information into a single data frame for plotting
 samples.info <- data.frame("Cell"=colnames(pool.exprs),
-                           "Run"=colData(sample3.nz.sce)$Run)
+                           "Run"=colData(sample3.sce)$Run)
 
 # merge the two data frames together
 combined.pca.merge <- merge(combined.hvg.pcs, samples.info, by='Cell')
 
-rm(all.samp.exprs, combined.hvg.pca, combined.hvg.pcs, samples.info)
+
 ```
 
 ```{r tog_show_irlba_batch_GSM3872442, eval=FALSE, include=FALSE}
@@ -245,26 +191,25 @@ ggplot(combined.pca.merge, aes(x=PC1, y=PC2, fill=Run)) +
 Plot PC1-PC2 plane, with cells colored by 'Run' (and sized according to library size):
 
 ```{r tog_show_pca_batch_GSM3872442}
-sample3.nz.sce <- runPCA(sample3.nz.sce)
-plotPCA(sample3.nz.sce, colour_by="Run", size_by = "sum")
+sample3.sce <- runPCA(sample3.sce)
+plotPCA(sample3.sce, colour_by="Run", size_by = "sum")
 ```
 
 ```{r tog_show_tsne_batch_GSM3872442}
-sample3.nz.sce <- runTSNE(sample3.nz.sce, dimred="PCA")
-plotTSNE(sample3.nz.sce, colour_by="Run", size_by = "sum")
+sample3.sce <- runTSNE(sample3.sce, dimred="PCA")
+plotTSNE(sample3.sce, colour_by="Run", size_by = "sum")
 ```
 
 ```{r tog_show_umap_batch_GSM3872442}
-sample3.nz.sce <- runUMAP(sample3.nz.sce, dimred="PCA")
-plotUMAP(sample3.nz.sce, colour_by="Run", size_by = "sum")
+sample3.sce <- runUMAP(sample3.sce, dimred="PCA")
+plotUMAP(sample3.sce, colour_by="Run", size_by = "sum")
 ```
 
 ## Batch correction
 
 ```{r editSce_batch_GSM3872442}
-sample3.nz.sce$Run <- factor(sample3.nz.sce$Run)
-sample3.nz.sce$batch <- sample3.nz.sce$Run
-sce <- sample3.nz.sce
+sample3.sce$Run <- factor(sample3.sce$Run)
+sample3.sce$batch <- sample3.sce$Run
 ```
 
 ###  Gaussian (normal) linear models
@@ -275,24 +220,20 @@ Limma
 
 ```{r linReg_batch_GSM3872442}
 suppressMessages(require(limma))
-lm_design_batch <- model.matrix(~0 + batch, data = colData(sce))
-fit_lm_batch <- lmFit(logcounts(sce), lm_design_batch)
-resids_lm_batch <- residuals(fit_lm_batch, logcounts(sce))
-assay(sce, "lm_batch") <- resids_lm_batch
+lm_design_batch <- model.matrix(~0 + batch, data = colData(sample3.sce))
+fit_lm_batch <- lmFit(logcounts(sample3.sce), lm_design_batch)
+resids_lm_batch <- residuals(fit_lm_batch, logcounts(sample3.sce))
+assay(sample3.sce, "lm_batch") <- resids_lm_batch
 
-reducedDim(sce, "PCA_lm_batch") <- reducedDim(
-  runPCA(sce, exprs_values = "lm_batch"), "PCA")
+reducedDim(sample3.sce, "PCA_lm_batch") <- reducedDim(
+  runPCA(sample3.sce, exprs_values = "lm_batch"), "PCA")
 
-plotReducedDim(sce, dimred = "PCA_lm_batch",
+plotReducedDim(sample3.sce, dimred = "PCA_lm_batch",
         colour_by = "batch", 
         size_by = "sum",
         shape_by = "Sample.Name"
         ) +
   ggtitle("LM - regress out batch")
-```
-
-```{r copyPreSct_batch_GSM3872442, eval=FALSE}
-#scePreSct <- sce # not used TODO delete
 ```
 
 ## SCTransform
