@@ -8,11 +8,6 @@ output:
     toc: yes
     number_sections: true
     code_folding: hide
-  html_notebook:
-    code_folding: hide
-    toc: yes
-    toc_float: yes
-    number_sections: true
 ---
 
 ```{r setup, echo=FALSE, include=FALSE, message=FALSE}
