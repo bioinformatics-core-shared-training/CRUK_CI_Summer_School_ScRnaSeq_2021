@@ -8,11 +8,6 @@ output:
     toc: yes
     number_sections: true
     code_folding: hide
-  html_notebook:
-    code_folding: hide
-    toc: yes
-    toc_float: yes
-    number_sections: true
 ---
 
 # Data integration - PBMMC and ETV6-RUNX samples
@@ -60,14 +55,11 @@ We will load the SCE R object with the normalised counts from after the dimmensi
 objects in a `large list` for ease of running the following steps but it is no different to running each sample seperately at this point. Each sample has been subset to 500 cells per sample for demonstration purposes.
 
 ```{r loadSplit_PBMMC_ETV6-RUNX1}
-# dimRedForViz.Rmd writes _dimRed.Rds
-getwd()
-dir("..")
 sce <- readRDS("./Robjects/caron_postDeconv_5hCellPerSpl_dimRed.Rds")
 
 #split.sce <- split(sce, sample(LETTERS, nrow(sce), replace=TRUE))
 x <- subset(sce, , SampleName=="ETV6-RUNX1_1")
-sampleNameGroupLevels <- levels(factor(colData(sce)$SampleName))
+sampleNameLevels <- levels(factor(colData(sce)$SampleName))
 sampleNameToGet <- grep("PBMMC|ETV6-RUNX1", sampleNameLevels, value = TRUE)
 all.sce <- lapply(sampleNameToGet, function(x){ subset(sce, , SampleName==x) })
 names(all.sce) <- sampleNameToGet
