@@ -14,16 +14,28 @@ output:
 
 # Batch correction - GSM3872442 set
 
+When we do single cell RNA-Seq experiments most of the time inevitably there will be technical batch effects. For example, logistically maybe we can't put all of our samples in the same run and so have to split them up. Even within samples all sequenced together there can be batch effects from the previous steps. We need to check and correct for them.
+
 ## Learning objectives
 
-* Understand different batch correction methods using one sample sequenced in two different runs.
+Understand different batch correction methods using one sample sequenced in two different runs. We will look at differences in :
+
+* Normalisation order
+
+* Correction with limma
+
+* Correction with mnnCorrect
+
+* Correction with fastMNN
+
+* Correction with Harmony
 
 ## Data
 
 GSM3872442 is a single PBMMC sample sequenced as a pool of two libraries:
 SRR9264351 and SRR9264352.
 
-We will use this sample to illustrate batch correction.
+We will use this sample to illustrate batch correction methods.
 
 ```{r libraries_batch_GSM3872442, message=FALSE, include=FALSE}
 library(scater)
@@ -36,7 +48,7 @@ library(Cairo)
 
 Load object 
 
-```{r GSM3872442_readIn, cache=FALSE, eval=FALSE}
+```{r GSM3872442_readIn}
 sce <- readRDS("~/Downloads/caron_sce_nz_postQc.Rds")
 ```
 
@@ -308,12 +320,12 @@ This is the initial method. It uses gene expression values to identify cells wit
 Let us get the normalised counts:
 
 ```{r mnnCor_prep_batch_GSM3872442}
-batch1 <- logcounts(sce1) #needed?
+batch1 <- logcounts(sce1)
 batch2 <- logcounts(sce2)
 
 ```
 
-```{r mnnCor_hvgOnly_batch_GSM3872442, eval=FALSE, include=FALSE}
+```{r mnnCor_hvgOnly_batch_GSM3872442}
 # returns a matrix with rownames only for the gene subset,
 # at the top of the matrix
 # preventing copy of that corrected matrix as an assay in the SCE object
@@ -366,7 +378,7 @@ fx <- batchelor::fastMNN(
                       sample3.sce,
                       batch = sample3.sce$Run
 			)
-class(fx)
+
 ```
 
 Copy the corrected values to the SCE object:
