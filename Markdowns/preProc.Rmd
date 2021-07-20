@@ -61,11 +61,11 @@ library(patchwork)
 library(ggvenn)
 ```
 
-* DropletUtils - utilities for the analysis of droplet-based, inc. cell counting
-* scater - QC
-* ensembldb & AnnotationHub - for gene annotation
-* BiocParallel - for parallelisation of some functions
-* tidyverse, patchwork & ggvenn - for data.frame manipulation and plotting
+* **DropletUtils** - utilities for the analysis of droplet-based, inc. cell counting
+* **scater** - QC
+* **ensembldb** & **AnnotationHub** - for gene annotation
+* **BiocParallel** - for parallelisation of some functions
+* **tidyverse**, **patchwork** & **ggvenn** - for data.frame manipulation and plotting
 
 #  Load the data
 
@@ -131,11 +131,13 @@ object. The details of the structure of the object are described
 various data types in a single object. Currently it will contain:
 
 * the count matrix
-* feature (gene) annotation
-* droplet annotation
+* feature (gene) metadata
+* cell (droplet) metadata
 
 Later we will also add the outcomes of downstream analysis such as
 dimensionality reduction.
+
+![](Images/sceOverview.png)
 
 ### The counts matrix
 
