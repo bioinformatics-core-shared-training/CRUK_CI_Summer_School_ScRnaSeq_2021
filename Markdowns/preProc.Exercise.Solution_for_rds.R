@@ -13,7 +13,7 @@ bp.params <- MulticoreParam(workers = 7)
 
 samplesheet <- read_tsv("Data/sample_sheet.tsv")
 
-# data object from `preProc.Challenge.PrepareDataSet.R`
+# data object from `preProc.Exercise.PrepareDataSet.R`
 sce <- readRDS("Robjects/Caron_data.sce.annot.rds")
 
 # Filter undetected genes
