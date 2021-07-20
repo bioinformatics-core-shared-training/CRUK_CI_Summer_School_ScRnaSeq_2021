@@ -8,7 +8,7 @@
 ## Instructors
 
 * Abigail Edwards - Bioinformatics Core, Cancer Research UK Cambridge Institute
-* Ashley D Sawle - Bioinformatics Core, Cancer Research UK Cambridge Institute
+* Ashley Sawle - Bioinformatics Core, Cancer Research UK Cambridge Institute
 * Stephane Ballereau - Bioinformatics Core, Cancer Research UK Cambridge Institute
 * Zeynep Kalender Atak - Miller Group, Cancer Research UK Cambridge Institute
 
