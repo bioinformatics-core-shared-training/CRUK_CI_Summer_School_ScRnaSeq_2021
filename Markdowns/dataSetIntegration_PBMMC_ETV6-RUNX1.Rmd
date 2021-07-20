@@ -698,7 +698,7 @@ We suggest limiting the use of per-gene corrected values to visualization, e.g.,
 ```{r consis_mnnoutSaveRds_PBMMC_ETV6-RUNX1, warning=F}
 # save the mnn.out object in a file
 
-saveRDS(mnn.out, file="DataIntegration_mnn.out.rds")
+saveRDS(mnn.out, file="./Robjects/DataIntegration_mnn.out.rds")
 
 ```
 
