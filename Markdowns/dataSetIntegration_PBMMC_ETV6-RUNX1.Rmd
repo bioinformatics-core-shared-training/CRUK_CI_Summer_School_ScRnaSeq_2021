@@ -344,7 +344,6 @@ combined.dec.df <- combined.dec[,columnsToGet] %>%
   data.frame() %>%
   tibble::rownames_to_column("ID") %>%
   filter(ID %in% rownames(rowData(mnn.out)))
-copyDf <- rowData(mnn.out)
 rotationMat <- rowData(mnn.out)$rotation
 rowData(mnn.out)$ID <- rownames(rowData(mnn.out))
 rowData(mnn.out)$rotation <- NULL
@@ -354,7 +353,12 @@ rowData(mnn.out) <- rowData(mnn.out) %>%
   left_join(combined.dec.df, by="ID") %>%
   DataFrame()
 
-rowData(mnn.out) <- cbind(rowData(mnn.out), rotationMat)
+# add rotation back
+rowData(mnn.out)$rotation <- rotationMat
+
+# also have gene symbol:
+# copied from 'uncorrected'
+rowData(mnn.out)$Symbol <- rowData(uncorrected)[rowData(mnn.out)$ID,]$Symbol
 
 # tidy
 rm(columnsToGet, rotationMat)

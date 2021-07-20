@@ -23,7 +23,7 @@ params:
   inpDirBit: '.'
   outDirBit: '.'
   bookType: mk
-  cacheBool: no
+  cacheBool: FALSE
   setName: caron
   splSetToGet: PBMMC,ETV6-RUNX1
   setSuf: _5hCellPerSpl
@@ -597,23 +597,13 @@ For the same number of clusters (10), fewer cells have negative values with k-me
 
 One may also use multiple metrics rather than only one and check how they concord, using `NbClust::NbClust()` (see manual for a description of metrics computed):
 
-```{r NbClust_file, eval=TRUE}
+```{r NbClust_run, eval=TRUE}
 # run only once and save outcome to file to load later.
 
 #tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postDeconv%s_500CellK2to20NbClust.Rds",
 #                 projDir, outDirBit, setName, setSuf)
 tmpFn <- str_glue("{projDir}/{outDirBit}/Robjects/{setName}_postDeconv{setSuf}_500CellK2to20NbClust.Rds")
 tmpFn
-print(tmpFn)
-file.exists(tmpFn)
-```
-
-```{r}
-knit_exit()
-```
-
-
-```{r NbClust_run, eval=TRUE}
 if(file.exists(tmpFn))
 {
 	nb <- readRDS(file=tmpFn)
