@@ -17,20 +17,6 @@ output:
 
 # Data integration - PBMMC and ETV6-RUNX samples
 
-```{r dsi_Caron.knitr_options, echo=FALSE, results="hide", message=FALSE, dev="CairoPNG"}
-library(knitr)
-cacheBool <- !TRUE
-
-# if X11 is not available, add:
-# 'dev="CairoPNG"' in chunk param above
-# options(bitmapType='cairo')
-# opts_chunk$set(dev="CairoPNG")
-# library(Cairo)
-
-options(bitmapType='cairo') # if X11 is not available
-opts_chunk$set(dev="CairoPNG") # if X11 is not available
-library(Cairo) # if X11 is not available
-```
 
 ## Learning Objectives
 
@@ -95,38 +81,6 @@ saveRDS(all.sce, "./Robjects/DataIntegration_all_sce.rds")
 ```{r load_PBMMC_ETV6-RUNX1, eval=FALSE}
 all.sce <- readRDS("./Robjects/DataIntegration_all_sce.rds")
 all.sce
-```
-
-<!-- dev check files -->
-
-```{r, eval=FALSE}
-# DEV
-# caron_postQc_5hCellPerSpl.Rds
-file.exists("../CourseMaterials/Robjects/caron_postQc_5hCellPerSpl.Rds")
-x <- readRDS("../CourseMaterials/Robjects//caron_postQc_5hCellPerSpl.Rds")
-x
-# dim: 28377 5500 
-
-# CourseMaterials/Robjects/caron_postDeconv_5hCellPerSpl.Rds
-getwd()
-dir("..")
-dir("../CourseMaterials/Robjects/")
-file.exists("../CourseMaterials/Robjects/caron_postDeconv_5hCellPerSpl.Rds")
-x <- readRDS("../CourseMaterials/Robjects//caron_postDeconv_5hCellPerSpl.Rds")
-x
-#dim: 17700 5500 
-
-# dimred:
-dir("..")
-file.exists("../RobjectsReadOnly/caron_sce_nz_postDeconv_5hCellPerSpl_dimRed.Rds")
-x <- readRDS("../RobjectsReadOnly/caron_sce_nz_postDeconv_5hCellPerSpl_dimRed.Rds")
-x
-
-# featSel
-tmpFn <- "/mnt/nas-data/bioinformatics/group_folders/baller01/20200511_FernandesM_ME_crukBiSs2020/AnaWiSce/AnaCourse1/Robjects/caron_sce_nz_postDeconv_5hCellPerSpl_featSel.Rds"
-file.exists(tmpFn)
-x <- readRDS(tmpFn)
-x
 ```
 
 We then apply the standard workflow to each sample separately:
@@ -201,110 +155,6 @@ rescaled <- multiBatchNorm(uni.sce, batch = "SampleName")
 
 * We perform feature selection by averaging the variance components across all batches with the combineVar() function. We compute the average as it is responsive to batch-specific HVGs while still preserving the within-batch ranking of genes.
 
-```{r}
-my_combineBlocks <- function (blocks, ave.fields, pval.field, method, geometric, 
-    equiweight, weights, valid) 
-{
-    if (length(blocks) == 1L) {
-        return(blocks[[1]])
-    }
-    rn <- unique(lapply(blocks, rownames))
-    if (length(rn) != 1L) {
-        stop("gene identities should be the same")
-    }
-    if (equiweight) {
-        weights <- rep(1, length(blocks))
-    }
-    else if (is.null(weights)) {
-        stop("'weights' must be specified if 'equiweight=FALSE'")
-    }
-    original <- blocks
-    if (length(unique(vapply(original, nrow, 0L))) != 1L) {
-        stop("not all 'blocks' have the same number of rows")
-    }
-    if (!any(valid)) {
-        stop("no entry of 'blocks' has positive weights")
-    }
-    blocks <- blocks[valid]
-    weights <- weights[valid]
-    combined <- list()
-    for (i in ave.fields) {
-        extracted <- lapply(blocks, "[[", i = i)
-        #print(class(extracted))
-        #print(length(extracted))
-        if (geometric) {
-            extracted <- lapply(extracted, log)
-        }
-        extracted <- mapply("*", extracted, weights, SIMPLIFY = FALSE, 
-            USE.NAMES = FALSE)
-        averaged <- Reduce("+", extracted)/sum(weights)
-        if (geometric) {
-            averaged <- exp(averaged)
-        }
-        #print(class(averaged))
-        #print(length(averaged))
-        #print(head(averaged))
-        combined[[i]] <- averaged
-    }
-    extracted <- lapply(blocks, "[[", i = pval.field)
-    #print(class(extracted))
-    #print(length(extracted))
-        
-    combined$p.value <- do.call(combinePValues,
-                                c(extracted, list(method = method, weights = weights)))
-    #print(combined$p.value)
-
-    combined$FDR <- p.adjust(combined$p.value, method = "BH")
-    #print(combined$FDR)
-
-    output <- DataFrame(combined, row.names = rn[[1]])
-    #print(class(output))
-
-    return(output) # stop now
-    # or get error message:
-    # Error in h(simpleError(msg, call)) : 
-    # error in evaluating the argument 'X' in selecting a method for function 'lapply': trying to get slot "listData
-    # from an object (class "DFrame") that is not an S4 object
-
-    # dev
-    # trying to get rid of error.
-    # ... but dropping that
-    # ... because we only consult $bio once.
-
-    original_I <- lapply(original, I)
-    original_I2 <- c(lapply(original, I),
-                                  list(check.names = FALSE))
-
-    original_I3 <- do.call(DataFrame, original_I2)
-    original_I4 <- DataFrame(original_I3)
-
-    is(original_I3, "DataFrame")
-    
-    original_I3b <- as(original_I2, "DataFrame")
-    
-    # remaining code
-    output$per.block <- do.call(DataFrame,
-                                c(lapply(original, I),
-                                  list(check.names = FALSE))
-                                )
-    output
-}
-```
-
-```{r}
-#output <- my_combineBlocks(blocks=list(uni.dec[[1]], uni.dec[[2]]), 
-combined.dec <- my_combineBlocks(blocks=uni.dec, 
-    ave.fields=c("mean", "total", "bio", "tech"),
-    pval.field='p.value', 
-    method='fisher',
-    geometric=FALSE,
-    equiweight=TRUE,
-    weights=NULL,
-    valid=c(TRUE, TRUE))
-```
-
-
-
 
 ```{r combineVar_PBMMC_ETV6-RUNX1}
 # compute average variance components across samples
@@ -337,25 +187,6 @@ rowData(uncorrected) <- cbind(rowData(uncorrected), combined.dec)
 
 saveRDS(uncorrected, "./Robjects/DataIntegration_uncorrected.rds")
 
-```
-
-<!-- plot variance decomposition data --> 
-
-```{r, eval=FALSE}
-combDf <- data.frame(rowData(uncorrected))
-table(combDf$chosenHvg, -log10(combDf$FDR) < 0.05)
-
-# plot
-xlimVec <- quantile(combDf$tech, probs=c(0.05, 0.95))
-ylimVec <- quantile(combDf$bio, probs=c(0.05, 0.95))
-p <- ggplot(combDf,
-            aes(x=tech, y=bio, col=-log10(FDR))
-            ) +
-  geom_point(size = 0.5, alpha = 0.5) +
-  scale_x_continuous(limits = xlimVec) +
-  scale_y_continuous(limits = ylimVec)
-p
-p + facet_wrap(chosenHvg~FDR<0.05)
 ```
 
 
