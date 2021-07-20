@@ -1,7 +1,7 @@
 ---
 title: "Alignment and feature counting"
 author: "Ashley Sawle"
-date: 'Today'
+date: 'July 2021'
 output:
   ioslides_presentation:
     widescreen: true
