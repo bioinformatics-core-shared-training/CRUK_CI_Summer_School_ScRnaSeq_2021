@@ -1,19 +1,18 @@
 ---
 title: "CRUK CI Summer School 2020 - introduction to single-cell RNA-seq analysis"
 subtitle: 'Multi-sample comparisons'
-
 author: "Stephane Ballereau, Zeynep Kalender Atak, Katarzyna Kania"
 output:
-  html_notebook:
-    code_folding: hide
-    toc: yes
-    toc_float: yes
-    number_sections: true
   html_document:
     df_print: paged
     toc: yes
     number_sections: true
     code_folding: hide
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    number_sections: true
   html_book:
     code_folding: hide
 params:
@@ -40,8 +39,10 @@ params2 <- list(
   #"projDir" = "/ssd/personal/baller01/20200511_FernandesM_ME_crukBiSs2020",
   "projDir" = "..",
   "dirRel" = "..",
-  "inpDirBit" = "AnaWiSce/AnaCourse1",
-  "outDirBit" = "AnaWiSce/AnaCourse1",
+  #"inpDirBit" = "AnaWiSce/AnaCourse1",
+  #"outDirBit" = "AnaWiSce/AnaCourse1",
+  "inpDirBit" = ".",
+  "outDirBit" = ".",
   "bookType" = "km",
   "cacheBool"  = FALSE,  
   "setName" = "caron",
@@ -79,29 +80,45 @@ nbPcToComp <- 50
 figSize <- 7
 ```
 
-```{r multiSplComp_setup, include=FALSE, echo=FALSE, dev="CairoPNG"}
+```{r multiSplComp_setup, include=FALSE, echo=FALSE}
+#, dev="CairoPNG"
+
 # First, set some variables:
 require(knitr)
+
+# if X11 is not available, add:
+# 'dev="CairoPNG"' in chunk param above
+# options(bitmapType='cairo')
+# opts_chunk$set(dev="CairoPNG")
+# library(Cairo)
+
+##options(bitmapType='cairo') # if X11 is not available
+##opts_chunk$set(dev="CairoPNG") # if X11 is not available
+##library(Cairo) # if X11 is not available
+
 opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE, cache=cacheBool)
-knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(eval = TRUE) 
+opts_chunk$set(echo = TRUE)
+opts_chunk$set(eval = TRUE) 
 options(stringsAsFactors = FALSE)
 opts_chunk$set(fig.width=7, fig.height=7)
 #opts_chunk$set(dev = c("png"))
-options(bitmapType='cairo')
-knitr::opts_chunk$set(dev="CairoPNG")
 set.seed(123) # for reproducibility
 ```
 
-```{r, include=FALSE, warning=FALSE}
-suppressMessages(library(scater))
-suppressMessages(library(scran))
-suppressMessages(library(tidyverse))
-suppressMessages(library(DT))
-library(Cairo)
+```{r, message=FALSE, warning=FALSE}
+library(scater)
+library(scran)
+library(edgeR)
+library(tidyverse)
+library(patchwork)
+library(DT)
 fontsize <- theme(axis.text=element_text(size=12), axis.title=element_text(size=16))
 sglPlotSize <- 7
 ```
+```{r}
+#knit_exit()
+```
+
 
 # Differential expression and abundance between conditions {#multiSplCompTop}
 
@@ -123,83 +140,76 @@ Load the SCE object:
 
 ```{r}
 # Read object in:
-##tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postDeconv%s_dsi_%s_Fmwbl.Rds",
-##		 projDir, outDirBit, setName, setSuf, splSetToGet2)
-##tmpFn <- str_glue("{projDir}/{outDirBit}/Robjects/{setName}_postDeconv{setSuf}{dsiSuf}_{splSetToGet2}_Fmwbl.Rds")
-tmpFn <- "../CourseMaterials/Robjects/DataIntergration_mnn.out.rds"
-print(tmpFn)
-
-if(!file.exists(tmpFn))
-{
-	knitr::knit_exit()
-}
+tmpFn <- "../Robjects/caron_postDeconv_5hCellPerSpl_dsi_PBMMC_ETV6-RUNX1_clust.Rds"
+file.exists(tmpFn)
 sce <- readRDS(tmpFn)
 sce
+colData(sce) %>% head
 ```
 
 A brief inspection of the results shows clusters contain varying contributions from batches:
 
 ```{r}
-library(scater)
-colLabels(sce) <- sce$clusters.mnn
+colLabels(sce) <- sce$louvain # clusters.mnn
 tab <- table(colLabels(sce), sce$SampleGroup)
 tab
 ```
-
 ```{r}
+tab <- table(colLabels(sce), sce$SampleName)
 pheatmap::pheatmap(tab,
            border_color      = NA,
            drop_levels       = TRUE,
-           cluster_rows      = FALSE,
-           cluster_cols      = FALSE
+           cluster_rows      = !FALSE,
+           cluster_cols      = !FALSE
            )
 ```
 
-```{r}
-tab <- table(colLabels(sce), sce$Sample.Name2)
-pheatmap::pheatmap(tab,
-           border_color      = NA,
-           drop_levels       = TRUE,
-           cluster_rows      = FALSE,
-           cluster_cols      = FALSE
-           )
-```
-
-On the t-SNE plots below, cells colored by type or sample ('batch of origin'). Cluster numbers are superimposed based on the median coordinate of cells assigned to that cluster. 
+On the t-SNE plots below, cells coloured by type or sample ('batch of origin'). Cluster numbers are superimposed based on the median coordinate of cells assigned to that cluster. 
 
 ```{r, fig.height=0.5*figSize, fig.width=1.2*figSize}
-p1 <- plotTSNE(sce, colour_by="source_name", text_by="label", point_size=0.3)
-p2 <- plotTSNE(sce, colour_by="Sample.Name2", point_size=0.3)
-gridExtra::grid.arrange(p1, p2+facet_wrap(~colData(sce)$Sample.Name2), ncol=2)
+p1 <- plotTSNE(sce, colour_by="SampleGroup", text_by="label", point_size=0.3)
+p2 <- plotTSNE(sce, colour_by="SampleName", point_size=0.3)
+gridExtra::grid.arrange(p1, p2+facet_wrap(~colData(sce)$SampleName), ncol=2)
 ```
 
+<!-- start from uncorrected from scratch
+and set merge.order --> 
 
-```{r, cache.lazy = FALSE}
-#tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postDeconv%s_Fmwbl2.Rds",
-#		 projDir, outDirBit, setName, setSuf)
-tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postDeconv%s_dsi_%s_Fmwbl2.Rds",
-		 projDir, outDirBit, setName, setSuf, splSetToGet2)
-tmpList <- readRDS(tmpFn)
+```{r}
+# load the uncorrected data
+#uncorrected <- readRDS("../Robjects/DataIntegration_uncorrected.rds")
+uncorrected <- readRDS("../Robjects/caron_sce_nz_postDeconv_allCells_dsi_PBMMC_ETV6-RUNX1_uncorr.Rds")
+uncorrected$SampleName <- uncorrected$Sample.Name2
+uncorrected$SampleGroup <- uncorrected$source_name
 
-chosen.hvgs <- tmpList$chosen.hvgs
-rescaled.mbn <- tmpList$rescaled.mbn
-uncorrected <- tmpList$uncorrected
-colToKeep <- c("Run", "Sample.Name", "source_name", "block", "setName", "Sample.Name2") 
-colData(uncorrected) <- colData(uncorrected)[,colToKeep]
-colData(uncorrected)[1:3,]
+
 
 #--- merging ---#
 library(batchelor)
 set.seed(01001001)
+# order based on levels of batch here sampleName
+
+uncorrected$SampleName <- factor(uncorrected$SampleName)
+pbmmc_index <- grep("PBMMC", levels(uncorrected$SampleName)) %>% as.list
+etv6runx1_index <- grep("ETV6-RUNX1", levels(uncorrected$SampleName)) %>% as.list
+hhd_index <- grep("HHD", levels(uncorrected$SampleName)) %>% as.list
+pret_index <- grep("PRE-T", levels(uncorrected$SampleName)) %>% as.list
+
 if(splSetToGet == "PBMMC,ETV6-RUNX1") {
-  mergeOrderList <- list( list(4,5,6,7), list(1,2,3) )
+  #mergeOrderList <- list( as.list(etv6runx1_index), as.list(pbmmc_index) )
+  mergeOrderList <- list( pbmmc_index,
+                          etv6runx1_index )
 } else if(splSetToGet == "allSets") {
-  mergeOrderList <- list( list(1,2,3,4), list(9,10,11), list(5,6), list(7,8) )
+  mergeOrderList <- list( pbmmc_index,
+                          etv6runx1_index,
+                          hhd_index,
+                          pret_index
+                          )
 }
 merged <- correctExperiments(uncorrected, 
-    batch=uncorrected$Sample.Name2, 
-    subset.row=chosen.hvgs,
-    PARAM=FastMnnParam(
+    batch = uncorrected$SampleName, 
+    subset.row = uncorrected$chosenHvg,
+    PARAM = FastMnnParam(
         merge.order=mergeOrderList
     )
 )
@@ -207,40 +217,31 @@ merged <- correctExperiments(uncorrected,
 merged
 
 #--- clustering ---#
-g <- buildSNNGraph(merged, use.dimred="corrected")
+g <- buildSNNGraph(merged, use.dimred = "corrected")
 clusters <- igraph::cluster_louvain(g)
-merged$clusters.mnn <- factor(paste0("c", clusters$membership))
+merged$clusters.mnn <- factor(paste0("c", clusters$membership),
+                              levels = paste0("c", sort(unique(clusters$membership))))
 #colLabels(merged) <- merged$clusters.mnn
 
 #--- dimensionality-reduction ---#
-merged <- runTSNE(merged, dimred="corrected", external_neighbors=TRUE)
-merged <- runUMAP(merged, dimred="corrected", external_neighbors=TRUE)
+merged <- runTSNE(merged, dimred = "corrected", external_neighbors=TRUE)
+merged <- runUMAP(merged, dimred = "corrected", external_neighbors=TRUE)
 
-library(scater)
-tab <- table(merged$clusters.mnn, merged$block)
+tab <- table(merged$clusters.mnn, merged$SampleName)
 pheatmap::pheatmap(tab,
            border_color      = NA,
            drop_levels       = TRUE,
-           cluster_rows      = FALSE,
+           cluster_rows      = !FALSE,
            cluster_cols      = FALSE
            )
-
-tab <- table(merged$clusters.mnn, merged$Sample.Name2)
-pheatmap::pheatmap(tab,
-           border_color      = NA,
-           drop_levels       = TRUE,
-           cluster_rows      = FALSE,
-           cluster_cols      = FALSE
-           )
-
-#plotTSNE(merged, colour_by="block", text_by="clusters.mnn")
-#plotTSNE(merged, colour_by="Sample.Name2")
 ```
 
 ```{r, fig.height=0.5*figSize, fig.width=1.2*figSize}
-p1 <- plotTSNE(merged, colour_by="block", text_by="clusters.mnn")
-p2 <- plotTSNE(merged, colour_by="Sample.Name2")
-gridExtra::grid.arrange(p1, p2+facet_wrap(~colData(sce)$splType), ncol=2)
+p1 <- plotTSNE(merged, colour_by="SampleGroup", text_by="clusters.mnn", point_size = 0.3)
+p2 <- plotTSNE(merged, colour_by="SampleName", point_size = 0.3) +
+  facet_wrap(~colData(merged)$SampleGroup)
+#p1/p2 + plot_layout(heights = c(2, 1))
+p1 + p2 + plot_layout(widths = c(1, 2))
 ```
 
 ## Differential expression between conditions
@@ -249,17 +250,17 @@ gridExtra::grid.arrange(p1, p2+facet_wrap(~colData(sce)$splType), ncol=2)
 
 The most obvious differential analysis is to look for changes in expression between conditions. We perform the DE analysis separately for each label. The actual DE testing is performed on “pseudo-bulk” expression profiles (Tung et al. 2017), generated by summing counts together for all cells with the same combination of label and sample. This leverages the resolution offered by single-cell technologies to define the labels, and combines it with the statistical rigor of existing methods for DE analyses involving a small number of samples.
 
-
 ```{r}
 # Using 'label' and 'sample' as our two factors; each column of the output
 # corresponds to one unique combination of these two factors.
+columnsToUse <- c("batch", "SampleName", "SampleGroup", "clusters.mnn")
+colData(merged) <- colData(merged) %>% data.frame() %>% select(all_of(columnsToUse)) %>% DataFrame
 summed <- aggregateAcrossCells(merged, 
     				id = DataFrame(
-    					label=merged$clusters.mnn,
-    					sample=merged$Sample.Name2
+    					label = merged$clusters.mnn,
+    					sample = merged$SampleName
 					)
 )
-summed
 colData(summed) %>% head(3)
 ```
 
@@ -282,9 +283,9 @@ We do not use all labels for GLM fitting as the strong DE between labels makes i
 ```{r}
 labelToGet <- "c1"
 current <- summed[,summed$label==labelToGet]
+colData(current)
 
 # Creating up a DGEList object for use in edgeR:
-suppressMessages(library(edgeR))
 y <- DGEList(counts(current), samples=colData(current))
 y
 ```
@@ -306,7 +307,7 @@ summary(discarded)
 Another typical step in bulk RNA-seq analyses is to remove genes that are lowly expressed. This reduces computational work, improves the accuracy of mean-variance trend modelling and decreases the severity of the multiple testing correction. Genes are discarded if they are not expressed above a log-CPM threshold in a minimum number of samples (determined from the size of the smallest treatment group in the experimental design).
 
 ```{r}
-keep <- filterByExpr(y, group=current$source_name)
+keep <- filterByExpr(y, group=current$SampleGroup)
 y <- y[keep,]
 summary(keep)
 ```
@@ -318,12 +319,28 @@ y <- calcNormFactors(y)
 y$samples
 ```
 
+
+
+```{r}
+par(mfrow=c(2,4))
+for (i in seq_len(ncol(y))) {
+    plotMD(y, column=i)
+}
+```
+
+```{r}
+plotMDS(cpm(y, log=TRUE), 
+    #col=ifelse(y$samples$tomato, "red", "blue")
+    col=as.numeric(y$samples$SampleGroup)
+)
+```
+
 #### Statistical modelling
 
 Our aim is to test whether the log-fold change between sample groups is significantly different from zero.
 
 ```{r}
-design <- model.matrix(~factor(source_name), y$samples)
+design <- model.matrix(~factor(SampleGroup), y$samples)
 design
 ```
 
@@ -366,7 +383,7 @@ summary(decideTests(res))
 
 ```{r}
 topTab <- topTags(res)$table
-tmpAnnot <- rowData(current)[,c("ensembl_gene_id","Symbol")] %>% data.frame
+tmpAnnot <- rowData(current)[,c("ensembl_gene_id","Symbol")] %>% data.frame # ensid can be ID
 topTab %>% tibble::rownames_to_column("ensembl_gene_id") %>%
 	left_join(tmpAnnot, by="ensembl_gene_id")
 ```
@@ -396,15 +413,15 @@ for (labelToGet in levels(summed$label)) {
 
     discarded <- isOutlier(colSums(counts(current)), log=TRUE, type="lower")
     y <- y[,!discarded]
-    y <- y[filterByExpr(y, group=current$source_name),]
+    y <- y[filterByExpr(y, group=current$SampleGroup),]
     y <- calcNormFactors(y)
 
     design <- try(
-        model.matrix(~factor(source_name), y$samples),
+        model.matrix(~factor(SampleGroup), y$samples),
         silent=TRUE
     )
     if (is(design, "try-error") || 
-        qr(design)$rank==nrow(design) ||
+        qr(design)$rank == nrow(design) ||
         qr(design)$rank < ncol(design)) 
     {
         # Skipping labels without contrasts or without 
@@ -414,7 +431,7 @@ for (labelToGet in levels(summed$label)) {
 
     y <- estimateDisp(y, design)
     fit <- glmQLFit(y, design)
-    res <- glmQLFTest(fit, coef=ncol(design))
+    res <- glmQLFTest(fit, coef = ncol(design))
     de.results[[labelToGet]] <- res
 }
 ```
@@ -478,7 +495,9 @@ nbGeneToShow <- 20
 #degs <- lapply(de.results, FUN=function(x) (topTags(x, p.value=0.05)))
 degs <- lapply(de.results, FUN=function(x) (as.data.frame(topTags(x, n=nbGeneToShow))))
 
-for( namex in levels(merged$clusters.mnn) )
+clustersToCheck <- setdiff(levels(merged$clusters.mnn), skippedClusters)
+
+for( namex in clustersToCheck)
 {
 	nbGeneToUse <- min(c(nrow(degs[[namex]]), nbGeneToShow))
 
@@ -510,7 +529,7 @@ for( namex in levels(merged$clusters.mnn) )
 grmToShowDf <- do.call("rbind", grmToShowList)
 tmpCol <- c("cluster", "gene")
 grmToShowDf %>%
-	select(tmpCol, setdiff(colnames(grmToShowDf), tmpCol)) %>%
+	select(all_of(tmpCol), setdiff(colnames(grmToShowDf), tmpCol)) %>%
 	filter(gene %in% names(common.degs) & as.numeric(FDR) < 0.05) %>%
 	datatable(rownames = FALSE, filter="top", options=list(scrollX = TRUE, pageLength = 15))
 
@@ -531,28 +550,26 @@ We construct a common design matrix that will be used in the analysis for each l
 
 ```{r}
 # Pulling out a sample-level 'targets' data.frame:
-targets <- colData(merged)[!duplicated(merged$Sample.Name2),] %>%
+targets <- colData(merged)[!duplicated(merged$SampleName),] %>%
   data.frame() %>%
   select(-clusters.mnn)
 
 # Constructing the design matrix:
-design <- model.matrix(~factor(source_name), data=targets)
-rownames(design) <- targets$Sample.Name2
+design <- model.matrix(~factor(SampleGroup), data=targets)
+rownames(design) <- targets$SampleName
 ```
 
 We then apply the pseudoBulkDGE() function to obtain a list of DE genes for each label. This function puts some additional effort into automatically dealing with labels that are not represented in all sample groups, for which a DE analysis between conditions is meaningless; or are not represented in a sufficient number of replicate samples to enable modelling of biological variability.
 
 ```{r}
-library(scran)
-de.results <- pseudoBulkDGE(summed.filt, 
-    sample=summed.filt$Sample.Name2,
-    label=summed.filt$label,
-    design=design,
-    coef=ncol(design),
+#library(scran)
+summed.filt$SampleGroup <- factor(summed.filt$SampleGroup)
 
-    # 'condition' sets the group size for filterByExpr(),
-    # to perfectly mimic our previous manual analysis.
-    condition=targets$source_name 
+de.results <- pseudoBulkDGE(summed.filt, 
+    label = summed.filt$label,
+    design = ~SampleGroup,
+    coef = "SampleGroupPBMMC",
+    condition = summed.filt$SampleGroup
 )
 ```
 
@@ -597,6 +614,7 @@ cx <- colnames(is.de)[2]
 other.labels <- setdiff(colnames(not.de), cx)
 unique.degs <- is.de[,cx]!=0 & rowMeans(not.de[,other.labels])==1
 unique.degs <- names(which(unique.degs))
+head(unique.degs)
 ```
 
 ```{r}
@@ -609,9 +627,10 @@ de.inspec[[cx]] <- de.inspec[[cx]][rownames(de.inspec[[cx]]) %in% unique.degs,]
 sizeFactors(summed.filt) <- NULL
 plotExpression(logNormCounts(summed.filt), 
     features=rownames(de.inspec[[cx]])[1],
-    x="source_name", colour_by="source_name", 
+    x="SampleGroup", colour_by="SampleGroup", 
     other_fields="label") + 
-    facet_wrap(~label)
+    facet_wrap(~label) +
+  ggtitle(rownames(de.inspec[[cx]])[1])
 ```
 
 We also list the labels that were skipped due to the absence of replicates or contrasts. If it is necessary to extract statistics in the absence of replicates, several strategies can be applied such as reducing the complexity of the model or using a predefined value for the NB dispersion. We refer readers to the edgeR user’s guide for more details.
@@ -629,7 +648,7 @@ n a DA analysis, we test for significant changes in per-label cell abundance acr
 We prepare for the DA analysis by quantifying the number of cells assigned to each label (or cluster).
 
 ```{r}
-abundances <- table(merged$clusters.mnn, merged$Sample.Name2) 
+abundances <- table(merged$clusters.mnn, merged$SampleName) 
 abundances <- unclass(abundances) 
 head(abundances)
 ```
@@ -640,7 +659,7 @@ Our DA analysis will again be performed with the edgeR package. This allows us t
 
 ```{r}
 # Attaching some column metadata.
-extra.info <- colData(merged)[match(colnames(abundances), merged$Sample.Name2),]
+extra.info <- colData(merged)[match(colnames(abundances), merged$SampleName),]
 y.ab <- DGEList(abundances, samples=extra.info)
 y.ab
 ```
@@ -648,7 +667,7 @@ y.ab
 We filter out low-abundance labels as previously described. This avoids cluttering the result table with very rare subpopulations that contain only a handful of cells. For a DA analysis of cluster abundances, filtering is generally not required as most clusters will not be of low-abundance (otherwise there would not have been enough evidence to define the cluster in the first place).
 
 ```{r}
-keep <- filterByExpr(y.ab, group=y.ab$samples$source_name)
+keep <- filterByExpr(y.ab, group=y.ab$samples$SampleGroup)
 y.ab <- y.ab[keep,]
 summary(keep)
 ```
@@ -658,7 +677,7 @@ Unlike DE analyses, we do not perform an additional normalization step with calc
 Here, the log-fold change in our model refers to the change in cell abundance between sample groups, rather than the change in gene expression.
 
 ```{r}
-design <- model.matrix(~factor(source_name), y.ab$samples)
+design <- model.matrix(~factor(SampleGroup), y.ab$samples)
 ```
 
 We use the estimateDisp() function to estimate the NB dipersion for each cluster. We turn off the trend as we do not have enough points for its stable estimation.
@@ -705,7 +724,8 @@ topTags(res)
 As mentioned above, we do not use calcNormFactors() in our default DA analysis. This normalization step assumes that most of the input features are not different between conditions. While this assumption is reasonable for most types of gene expression data, it is generally too strong for cell type abundance - most experiments consist of only a few cell types that may all change in abundance upon perturbation. Thus, our default approach is to only normalize based on the total number of cells in each sample, which means that we are effectively testing for differential proportions between conditions.
 
 Unfortunately, the use of the total number of cells leaves us susceptible to composition effects. For example, a large increase in abundance for one cell subpopulation will introduce decreases in proportion for all other subpopulations - which is technically correct, but may be misleading if one concludes that those other subpopulations are decreasing in abundance of their own volition. If composition biases are proving problematic for interpretation of DA results, we have several avenues for removing them or mitigating their impact by leveraging a priori biological knowledge.
-14.4.3.2 Assuming most labels do not change
+
+#### Assuming most labels do not change
 
 If it is possible to assume that most labels (i.e., cell types) do not change in abundance, we can use calcNormFactors() to compute normalization factors.
 
@@ -725,8 +745,8 @@ topTags(res2, n=10)
 
 ## Session information
 
-<details>
+<!--<details>-->
 ```{r}
 sessionInfo()
 ```
-</details>
+<!--</details>-->
