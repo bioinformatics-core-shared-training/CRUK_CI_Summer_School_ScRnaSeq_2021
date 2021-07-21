@@ -14,16 +14,28 @@ output:
 
 # Batch correction - GSM3872442 set
 
+When we do single cell RNA-Seq experiments most of the time inevitably there will be technical batch effects. For example, logistically maybe we can't put all of our samples in the same run and so have to split them up. Even within samples all sequenced together there can be batch effects from the previous steps. We need to check and correct for them.
+
 ## Learning objectives
 
-* Understand different batch correction methods using one sample sequenced in two different runs.
+Understand different batch correction methods using one sample sequenced in two different runs. We will look at differences in :
+
+* Normalisation order
+
+* Correction with limma
+
+* Correction with mnnCorrect
+
+* Correction with fastMNN
+
+* Correction with Harmony
 
 ## Data
 
 GSM3872442 is a single PBMMC sample sequenced as a pool of two libraries:
 SRR9264351 and SRR9264352.
 
-We will use this sample to illustrate batch correction.
+We will use this sample to illustrate batch correction methods.
 
 ```{r libraries_batch_GSM3872442, message=FALSE, include=FALSE}
 library(scater)
@@ -36,7 +48,7 @@ library(Cairo)
 
 Load object 
 
-```{r GSM3872442_readIn, cache=FALSE, eval=FALSE}
+```{r GSM3872442_readIn}
 sce <- readRDS("~/Downloads/caron_sce_nz_postQc.Rds")
 ```
 
@@ -67,7 +79,7 @@ sample1.sce <- logNormCounts(sample1.sce)
 
 sample2.qclusters <- quickCluster(sample2.sce, method="igraph")
 sample2.sce <- computeSumFactors(sample2.sce, min.mean=0.1, cluster=sample2.qclusters)
-sample2.sce <- logNormCounts(sample2.nz.sce)
+sample2.sce <- logNormCounts(sample2.sce)
 
 ```
 
@@ -265,8 +277,8 @@ Batchelor commands to make the two batches and identify highly variable genes fo
 
 library(batchelor)
 # Mind assayNames()
-sce1 <- sce[, sce$Run == "SRR9264351"]
-sce2 <- sce[, sce$Run == "SRR9264352"]
+sce1 <- sample3.sce[, sample3.sce$Run == "SRR9264351"]
+sce2 <- sample3.sce[, sample3.sce$Run == "SRR9264352"]
 ```
 
 ```{r noCor_var_batch_GSM3872442}
@@ -276,7 +288,7 @@ dec2 <- modelGeneVar(sce2)
 combined.dec <- combineVar(dec1, dec2)
 chosen.hvgs <- combined.dec$bio > 0
 summary(chosen.hvgs)
-rm(dec1, dec2)
+
 ```
 
 As a diagnostic, we check that there actually is a batch effect across these datasets by checking that they cluster separately. Here, we combine the two SingleCellExperiment objects without any correction using the NoCorrectParam() flag, and we informally verify that cells from different batches are separated using a t-SNE plot.
@@ -295,10 +307,10 @@ plotUMAP(combined, colour_by="batch")
 ```
 
 ```{r noCor_addNoCor_batch_GSM3872442}
-reducedDim(sce, "PCA_noCor") <- reducedDim(combined, "PCA")
-reducedDim(sce, "TSNE_noCor") <- reducedDim(combined, "TSNE")
-reducedDim(sce, "UMAP_noCor") <- reducedDim(combined, "UMAP")
-rm(combined)
+reducedDim(sample3.sce, "PCA_noCor") <- reducedDim(combined, "PCA")
+reducedDim(sample3.sce, "TSNE_noCor") <- reducedDim(combined, "TSNE")
+reducedDim(sample3.sce, "UMAP_noCor") <- reducedDim(combined, "UMAP")
+
 ```
 
 ### Correct batch effect with mnnCorrect
@@ -310,38 +322,18 @@ Let us get the normalised counts:
 ```{r mnnCor_prep_batch_GSM3872442}
 batch1 <- logcounts(sce1)
 batch2 <- logcounts(sce2)
-rm(sce1, sce2)
+
 ```
 
-```{r mnnCor_hvgOnly_batch_GSM3872442, eval=FALSE, include=FALSE}
-# using a subset of genes to compute correction and correcting all genes
+```{r mnnCor_hvgOnly_batch_GSM3872442}
 # returns a matrix with rownames only for the gene subset,
 # at the top of the matrix
 # preventing copy of that corrected matrix as an assay in the SCE object
 
-fewer.hvgs <- head(order(combined.dec$bio, decreasing=TRUE), 500)
-
 # mmnCorrect returns the corrected gene expression matrix directly
 
-x <- batchelor::mnnCorrect(
-          batch1, batch2,  
-	  subset.row = fewer.hvgs,
-	  correct.all = TRUE,
-          k = 20,
-          sigma = 0.1,
-          cos.norm.in = TRUE,
-          svd.dim = 2
-        )
-dim(assay(x, "corrected"))
-head(colnames(assay(x, "corrected")))
-head(rownames(assay(x, "corrected")))
-all(rownames(sce) == rownames(x))
-```
-
-```{r mnnCor_allGenes_batch_GSM3872442}
 y <- batchelor::mnnCorrect(
           batch1, batch2,  
-	  #subset.row = fewer.hvgs,
 	  correct.all = TRUE,
           k = 20,
           sigma = 0.1,
@@ -353,32 +345,29 @@ y <- batchelor::mnnCorrect(
 Copy the corrected values to the SCE object:
 
 ```{r mnnCor_addCorr_batch_GSM3872442}
-assay(sce, "mnn") <- assay(y, "corrected")
+assay(sample3.sce, "mnn") <- assay(y, "corrected")
 ```
 
 Show reduced dimension plots and check for improved mixing of cells from the two sets:
 
 ```{r mnnCor_pca_batch_GSM3872442}
-sce <- runPCA(sce, exprs_values = "mnn")
-plotPCA(sce, colour_by="batch")
-reducedDim(sce, "PCA_mnn") <- reducedDim(sce, "PCA")
+sample3.sce <- runPCA(sample3.sce, exprs_values = "mnn")
+plotPCA(sample3.sce, colour_by="batch")
+reducedDim(sample3.sce, "PCA_mnn") <- reducedDim(sample3.sce, "PCA")
 ```
 
 ```{r mnnCor_tsne_batch_GSM3872442}
-sce <- runTSNE(sce, dimred="PCA_mnn")
-plotTSNE(sce, colour_by="batch")
-reducedDim(sce, "TSNE_mnn") <- reducedDim(sce, "TSNE")
+sample3.sce <- runTSNE(sample3.sce, dimred="PCA_mnn")
+plotTSNE(sample3.sce, colour_by="batch")
+reducedDim(sample3.sce, "TSNE_mnn") <- reducedDim(sample3.sce, "TSNE")
 ```
 
 ```{r mnnCor_umap_batch_GSM3872442}
-sce <- runUMAP(sce, dimred="PCA_mnn")
-plotUMAP(sce, colour_by="batch")
-reducedDim(sce, "UMAP_mnn") <- reducedDim(sce, "UMAP")
+sample3.sce <- runUMAP(sample3.sce, dimred="PCA_mnn")
+plotUMAP(sample3.sce, colour_by="batch")
+reducedDim(sample3.sce, "UMAP_mnn") <- reducedDim(sample3.sce, "UMAP")
 ```
 
-```{r mnnCor_tidy_batch_GSM3872442}
-rm(combined.dec, chosen.hvgs)
-```
 
 ## fastMNN
 
@@ -386,11 +375,10 @@ This method is faster than mnnCorrect as it identifies nearest neighbours after 
 
 ```{r fastMnn_run_batch_GSM3872442}
 fx <- batchelor::fastMNN(
-                      sce,
-		      #correct.all = TRUE,
-                      batch = sce$Run
+                      sample3.sce,
+                      batch = sample3.sce$Run
 			)
-class(fx)
+
 ```
 
 Copy the corrected values to the SCE object:
@@ -398,18 +386,17 @@ Copy the corrected values to the SCE object:
 ```{r fastMnn_addRecon_batch_GSM3872442}
 # fastMNN may drop some genes
 # so we may not be able to keep the outcome in 'assay'
-assay(sce, "fastmnn") <- assay(fx, "reconstructed")
+assay(sample3.sce, "fastmnn") <- assay(fx, "reconstructed")
 ```
 
 Show reduced dimension plots and check for improved mixing of cells from the two sets:
 
 ```{r fastMnn_pca_batch_GSM3872442}
-fastmnn_pca <- runPCA(assay(sce, "fastmnn"), rank=2) # slow
-reducedDim(sce, "PCA_fastmnn") <- fastmnn_pca$rotation
-rm(fastmnn_pca)
+fastmnn_pca <- runPCA(assay(sample3.sce, "fastmnn"), rank=2) # slow
+reducedDim(sample3.sce, "PCA_fastmnn") <- fastmnn_pca$rotation
 
 plotReducedDim(
-  sce,
+  sample3.sce,
   dimred = "PCA_fastmnn",
   colour_by = "batch",
   size_by = "sum",
@@ -418,15 +405,15 @@ plotReducedDim(
 ```
 
 ```{r fastMnn_tsne_batch_GSM3872442}
-sce <- runTSNE(sce, dimred="PCA_fastmnn")
-plotTSNE(sce, colour_by="batch")
-reducedDim(sce, "TSNE_fastmnn") <- reducedDim(sce, "TSNE")
+sample3.sce <- runTSNE(sample3.sce, dimred="PCA_fastmnn")
+plotTSNE(sample3.sce, colour_by="batch")
+reducedDim(sample3.sce, "TSNE_fastmnn") <- reducedDim(sample3.sce, "TSNE")
 ```
 
 ```{r fastMnn_umap_batch_GSM3872442}
-sce <- runUMAP(sce, dimred="PCA_fastmnn")
-plotUMAP(sce, colour_by="batch")
-reducedDim(sce, "UMAP_fastmnn") <- reducedDim(sce, "UMAP")
+sample3.sce <- runUMAP(sample3.sce, dimred="PCA_fastmnn")
+plotUMAP(sample3.sce, colour_by="batch")
+reducedDim(sample3.sce, "UMAP_fastmnn") <- reducedDim(sample3.sce, "UMAP")
 ```
 
 ## Harmony
@@ -436,21 +423,21 @@ Harmony [Korsunsky2018fast] is a newer batch correction method, which is designe
 ```{r harmony_run_batch_GSM3872442}
 library(harmony)
 
-reducedDim(sce, "PCA_logcounts") <- reducedDim(
-  runPCA(sce, exprs_values = "logcounts")
+reducedDim(sample3.sce, "PCA_logcounts") <- reducedDim(
+  runPCA(sample3.sce, exprs_values = "logcounts")
 )
 
 #Seeing how the end result of Harmony is an altered dimensional reduction space created on the basis of PCA, we plot the obtained manifold here and exclude it from the rest of the follow-ups in the section.
 
-pca <- as.matrix(reducedDim(sce, "PCA_logcounts"))
+pca <- as.matrix(reducedDim(sample3.sce, "PCA_logcounts"))
 harmony_emb <- HarmonyMatrix(pca,
-			     sce$batch,
+			     sample3.sce$batch,
 			     theta=2,
 			     do_pca=FALSE)
-reducedDim(sce, "harmony") <- harmony_emb
+reducedDim(sample3.sce, "harmony") <- harmony_emb
 
 plotReducedDim(
-    sce,
+    sample3.sce,
     dimred = 'harmony',
     colour_by = "batch",
     size_by = "sum",
