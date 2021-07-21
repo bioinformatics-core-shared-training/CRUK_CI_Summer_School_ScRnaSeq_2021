@@ -70,6 +70,10 @@ splSetVec <- unlist(strsplit(splSetToGet, ","))
 splSetToGet2 <- gsub(",", "_", splSetToGet)
 nbPcToComp <- 50
 figSize <- 7
+
+# have analysis name to use in header
+anaStg <- sprintf("%s%s", splSetToGet2, setSuf)
+anaStg <- gsub("_", "-", anaStg)
 ```
 
 ```{r clusPostDsi_Caron.knitr_options, echo=FALSE, results="hide", message=FALSE}
@@ -300,7 +304,7 @@ In some areas cells are not all assigned to the same cluster.
 
 We can also check the contribution of each sample by painting cells by 'SampleName':
 
-```{r}
+```{r fig.width=2*5, fig.height=ceiling(nlevels(droplevels(sce$SampleGroup))/2)*5}
 g <- plotTSNE(sce, colour_by = "SampleName", shape_by="SampleGroup") +
   facet_wrap(. ~ sce$SampleGroup)
 g
@@ -829,41 +833,17 @@ colnames(tmpTab) = paste("15-step", colnames(tmpTab) , sep = "_")
 pheatmap(tmpTab)
 ```
 
-The network may also be built and clusters identified at once with `scran::clusterSNNGraph()` that also allows for large data sets to first cluster cells with k-means into a large number of clusters and then perform graph-based clustering on cluster centroids.
+The network may also be built and clusters identified at once with `bluster::clusterRows()` that also allows for large data sets to first cluster cells with k-means into a large number of clusters and then perform graph-based clustering on cluster centroids.
 
 ```{r, warning=FALSE}
-# set use.kmeans to TRUE to 'create centroids that are then subjected to graph-based clustering' (see manual)
-# with kmeans.centers default (square root of the number of cells)
-# or set kmeans.centers to another value, eg 30
-if(FALSE)
-{
-clustersOnce <- clusterSNNGraph(sce,
-			     #use.dimred="PCA",
-			     use.dimred="corrected",
-			     use.kmeans=TRUE,
-			     kmeans.centers = 50,
-			     full.stats=TRUE)
-}
-
 mat <- reducedDim(sce, "corrected")
 dim(mat)
 
 set.seed(100) # for the k-means
-two.out <- clusterRows(mat, TwoStepParam())
-two.out <- clusterRows(mat, TwoStepParam(
-  first = KmeansParam(centers=100),
-  second = NNGraphParam())
-)
-table(two.out)
-plotTSNE(sce, colour_by=I(two.out))
-plotUMAP(sce, colour_by=I(two.out))
-
-
 two.out <- clusterRows(mat, TwoStepParam(
   first = KmeansParam(centers=100),
   second = NNGraphParam(k=4, cluster.fun = "walktrap")),
   full = TRUE)
-class(two.out)
 plotTSNE(sce, colour_by=I(two.out$clusters))
 plotUMAP(sce, colour_by=I(two.out$clusters))
 
@@ -1276,8 +1256,11 @@ Concordance can also be measured with the adjusted Rand index that ranges betwee
 We first show clusters on a t-SNE plot:
 
 ```{r, fig.height=6, fig.width=8}
-cluToUse <- "cluster.out.10"
-plotTSNE(sce, colour_by = cluToUse) + ggtitle("walktrap, 10 clusters")
+#cluToUse <- "cluster.out.10"
+cluToUse <- "louvain"
+plotTSNE(sce, colour_by = cluToUse) +
+  #ggtitle("walktrap, 10 clusters")
+  ggtitle("louvain clusters")
 ```
 
 Having identified clusters, we now display the level of expression of cell type marker genes to quickly match clusters with cell types (e.g. MS4A1 for B cell marker gene). For each marker we will plot its expression on a t-SNE, and show distribution across each cluster on a violin plot.
