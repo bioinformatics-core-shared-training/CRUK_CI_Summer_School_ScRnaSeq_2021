@@ -1,15 +1,15 @@
 ---
 title: "Introduction to single-cell RNA-seq analysis - Normalisation"
 author: "Stephane Ballereau"
-date: "May 2021"
+date: "July 2021"
 output:
-  beamer_presentation: default
-  slidy_presentation: default
   ioslides_presentation:
     logo: ../Images/CRUK_CC_greyBgd.jpg
     smaller: yes
     widescreen: yes
     css: css/stylesheet.css
+  slidy_presentation: default
+  beamer_presentation: default
 ---
     
 <!--
@@ -30,7 +30,7 @@ library(dplyr)
 
 * Deconvolution
 
-* SCTransform
+* sctransform
 
 ## Motivation
 
@@ -50,8 +50,8 @@ Normalisation addresses technical differences only, while batch correction
 considers both technical and biological differences.
 
 Sources: chapters on normalisation in the
-[OSCA book](https://osca.bioconductor.org/normalization.html) and the
-[Hemberg group materials](https://scrnaseq-course.cog.sanger.ac.uk/website/index.html).
+[OSCA book](https://bioconductor.org/books/release/OSCA/normalization.html), the
+[Hemberg group materials](https://scrnaseq-course.cog.sanger.ac.uk/website/index.html) and [sctransform](https://github.com/ChristophH/sctransform).
 
 ## Initial methods
 
@@ -67,57 +67,109 @@ library size relative to the other cells.
 
 ## Examples
 
-* CPM: convert raw counts to counts-per-million (CPM)
+CPM: convert raw counts to counts-per-million (CPM)
+
   * for each cell
   * by dividing counts by the library size then multiplying by 1.000.000.
-* does not adress compositional bias caused by highly expressed genes that are also
+  * does not address compositional bias caused by highly expressed genes that are also
 differentially expressed between cells.
 
-## Examples
+<!-- ## Examples --> 
 
-* DESeq's size factor
+DESeq's size factor
+
   * For each gene, compute geometric mean across cells.
   * For each cell
     * compute for each gene the ratio of its expression to its geometric mean,
     * derive the cell's size factor as the median ratio across genes.
-
-Not suitable for sparse scRNA-seq data as the geometric is computed on non-zero
+  * Not suitable for sparse scRNA-seq data as the geometric is computed on non-zero
 values only.
 
-This method is also known as 'Relative Log Expression' (RLE) in `edgeR` and `scater`.
-
 ## Deconvolution
 
-```{r, echo=FALSE, out.width = '50%'}
-knitr::include_graphics("../Images/scran_Fig3.png", auto_pdf = TRUE)
+Deconvolution strategy [Lun et al 2016](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-016-0947-7/):
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("../Images/scran_Fig3c2.png", auto_pdf = TRUE)
 ```
-
-## Deconvolution
 
 Steps:
 
 * compute scaling factors,
 * apply scaling factors
 
-## SCTransform
+## sctransform
+
+With scaling normalisation a correlation remains between the mean and variance
+of expression (heteroskedasticity).
+
+This affects downstream dimensionality reduction as the few main new dimensions are usually correlated with library size.
+
+sctransform addresses the issue by regressing library size out of raw counts
+and providing residuals to use as normalized and variance-stabilized expression values in downstream analysis.
+
+## sctransform
+
+<div class="columns-2">
 
 With scaling normalisation a correlation remains between the mean and variation
 of expression (heteroskedasticity).
 
 This affects downstream dimensionality reduction as the few main new dimensions are usually correlated with library size.
 
-SCTransform addresses the issue by regressing library size out of raw counts
-and providing residuals to use as normalized and variance-stabilized expression values in downstream analysis.
+sctransform addresses the issue by:
 
-## SCTransform
+* regressing library size out of raw counts
+* providing residuals to use as normalized and variance-stabilized expression values 
 
-```{r, echo=FALSE, out.width = '40%'}
-knitr::include_graphics("../Images/sctransform1.png", auto_pdf = TRUE)
-```
+<!-- Mean-variance relationship -->
 
-## SCTransform
+![](../Images/sctransform1.png){width=80%}
+</div>
+
+<!--
+https://rawgit.com/ChristophH/sctransform/supp_html/supplement/variance_stabilizing_transformation.html
+For the genes, we can see that up to a mean UMI count of ca. 0.1 the variance follows the line through the origin with slop one, i.e. variance and mean are roughly equal as expected under a Poisson model. However, genes with a higher average UMI count show overdispersion compared to Poisson.
+-->
+
+## sctransform
+
+Variables
+
+* model the expression of each gene as a negative binomial random variable
+with a mean that depends on other variables
+
+* which model the differences in sequencing depth between cells
+
+* and used as independent variables in a regression model
+
+Regression
+
+* fit model parameters for each gene
+
+* combine data across genes using the relationship between gene mean and parameter values to fit parameters
+
+* transform each observed UMI count into a Pearson residual
+  * ~ number of standard deviations away from the expected mean 
+
+* expect mean of 0 and stable variance across the range of expression
+
+## sctransform
+
+Example of the transformation outcome for two genes:
+
+* UMI counts and pearson residuals against library size
+* with expected UMI counts in pink
 
 ```{r, echo=FALSE, out.width = '40%'}
 knitr::include_graphics("../Images/sctransform2.png", auto_pdf = TRUE)
 ```
+
+## Recap
+
+Early methods developed for bulk RNA-seq are not appropriate for sparse scRNA-seq data.
+
+The deconvolution method draws information from pools of cells to derive cell-based scaling factors.
+
+The sctransform method uses sequencing depth and information across genes to stabilise expression variance across the expression range.
 
