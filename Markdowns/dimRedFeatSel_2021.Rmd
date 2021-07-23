@@ -26,11 +26,6 @@ params:
 set.seed(123) # for reproducibility
 ```
 
-# Learning Objectives
-* 
-*
-*
-
 # Feature Selection 
 
 Source: [Dimensionality Reduction] (https://bioconductor.org/books/release/OSCA/dimensionality-reduction.html) chapter in OSCA Book. 
@@ -52,16 +47,16 @@ library(PCAtools)
 We will load the R file keeping the SCE object with the normalised counts for 500 cells per sample.
 
 ```{r, cache=FALSE}
-sce <- readRDS("../CourseMaterials/Robjects/caron_postDeconv_5hCellPerSpl.Rds")
+sce <- readRDS("~/Course_Materials/scRNAseq/Robjects/caron_postDeconv_5hCellPerSpl.Rds")
 sce
 ```
 
 ## Quantifying per-gene variation
-Some assays allow the inclusion of known molecules in a known amount covering a wide range, from low to high abundance: spike-ins. The technical noise is assessed based on the amount of spike-ins used, the corresponding read counts obtained and their variation across cells. The variance in expression can then be decomposed into the biolgical and technical components.
+Some assays allow the inclusion of known molecules in a known amount covering a wide range, from low to high abundance: spike-ins. The technical noise is assessed based on the amount of spike-ins used, the corresponding read counts obtained and their variation across cells. The variance in expression can then be decomposed into the biological and technical components.
 
 UMI-based assays do not (yet?) allow spike-ins. But one can still identify HVGs, that is genes with the highest biological component. Assuming that expression does not vary across cells for most genes, the total variance for these genes mainly reflects technical noise. The latter can thus be assessed by fitting a trend to the variance in expression. The fitted value will be the estimate of the technical component.
 
-Let’s fit a trend to the variance, using modelGeneVar().
+Let’s fit a trend to the variance, using `modelGeneVar()`.
 
 ```{r}
 dec.sce <- modelGeneVar(sce)
@@ -122,7 +117,7 @@ tmpName[is.na(tmpName)] <- rowData(sce)[tmpInd,"ID"][is.na(tmpName)]
 rm(tmpInd)
 ```
 
-Now show a violin plot for each gene, using plotExpression() and label genes with their name:
+Now show a violin plot for each gene, using `plotExpression()` and label genes with their name:
 
 ```{r plot_count_HVGtop20}
 g <- plotExpression(sce, rownames(dec.sce)[chosen.genes.index], 
@@ -203,7 +198,7 @@ One can also split the plot by sample.
 g +  facet_wrap(~ sce$SampleName)
 ```
 
-Or plot several PCs at once, using plotReducedDim():
+Or plot several PCs at once, using `plotReducedDim()`:
 
 ```{r sce_pca_plotReducedDim}
 plotReducedDim(sce, dimred="PCA", ncomponents=3, colour_by = "SampleName")
@@ -212,7 +207,7 @@ plotReducedDim(sce, dimred="PCA", ncomponents=3, colour_by = "SampleName")
 ## PCA Diagnostics 
 There is a large number of potential confounders, artifacts and biases in scRNA-seq data. One of the main challenges in analysing scRNA-seq data stems from the fact that it is difficult to carry out a true technical replication to distinguish biological and technical variability. Here we will continue to explore how experimental artifacts can be identified and removed. 
 
-The plot below shows, for each of the first 10 PCs, the variance explained by the ten variables in colData(sce) that are most strongly associated with the PCs. 
+The plot below shows, for each of the first 10 PCs, the variance explained by the ten variables in `colData(sce)` that are most strongly associated with the PCs. 
 ```{r}
 colData(sce)$SampleGroup <- factor(colData(sce)$SampleGroup)
 
@@ -229,7 +224,7 @@ explanPc <- getExplanatoryPCs(sce,
 plotExplanatoryPCs(explanPc/100) 
 ```
 
-We can see that PC1 can be explained mostly by `Sample.Name`, `source_name`, and Mitochondrial expression.  
+We can see that PC1 can be explained mostly by `SampleName`, `SampleGroups`, and Mitochondrial expression.  
 
 ```{r}
 plotExplanatoryVariables(
@@ -247,7 +242,7 @@ plotExplanatoryVariables(
 We can also compute the marginal R2 for each variable when fitting a linear model regressing expression values for each gene against just that variable, and display a density plot of the gene-wise marginal R2 values for the variables.
 
 
-This analysis indicates that individual and substype have the highest explanatory power for many genes, and we don't see technical covariates having high correlations. If that were the case, we might need to repeat the normalization step while conditioning out for these covariates, or we would include them in downstream analysis. 
+This analysis indicates that individual and subtype have the highest explanatory power for many genes, and we don't see technical covariates having high correlations. If that were the case, we might need to repeat the normalization step while conditioning out for these covariates, or we would include them in downstream analysis. 
 
 
 ## Chosing the number of PCs 
@@ -312,13 +307,12 @@ sce <- runTSNE(sce, dimred="PCA",perplexity=50, rand_seed=123)
 Plot t-SNE:
 
 ```{r plotTSNE_perp50}
-tsne50<-plotTSNE(sce, colour_by="SampleName",size_by="sum") + ggtitle("Perplexity = 50")
+tsne50 <- plotTSNE(sce, colour_by="SampleName",size_by="sum") + ggtitle("Perplexity = 50")
 tsne50
 ```
 
-<!-- Split by sample type: -->
-
-```{r plotTSNE_perp50_facetBySample, fig.width=12, fig.height=12, eval=FALSE, include=FALSE}
+Split by sample type:
+```{r, fig.width=12, fig.height=12}
 tsne50 + facet_wrap(~ sce$SampleGroup)
 ```
 
@@ -359,9 +353,9 @@ sce.umap <- plotUMAP(sce, colour_by="SampleName", size_by="sum") + ggtitle("UMAP
 sce.umap
 ```
 
-<!-- Split by sample: -->
+Split by sample:
 
-```{r plotUMAP_facetBySample, eval=FALSE, include=FALSE}
+```{r}
 sce.umap + facet_wrap(~ sce$SampleGroup)
 ```
 
@@ -369,7 +363,7 @@ sce.umap + facet_wrap(~ sce$SampleGroup)
 
 ```{r}
 # save sce object to which we have added dimensionality reduction slots:
-saveRDS(sce, "../CourseMaterials/Robjects/caron_postDeconv_5hCellPerSpl_dimRed.Rds")
+saveRDS(sce, "~/Course_Materials/scRNAseq/Robjects/caron_postDeconv_5hCellPerSpl_dimRed.Rds")
 ```
 
 ## Session information
