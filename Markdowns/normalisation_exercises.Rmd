@@ -26,7 +26,7 @@ single sample: ETV6-RUNX1_1 (aka GSM3872434).
 ```{r norm_Caron.knitr_options, echo=FALSE, results="hide", message=FALSE}
 require(knitr)
 # set working directory# set working directory# set working directory
-knitr::opts_knit$set(root.dir = '/home/ubuntu/Course_Materials/scRNAseq/Markdowns')
+knitr::opts_knit$set(root.dir = '/home/ubuntu/Course_Materials/scRNAseq/Challenges')
 # set other chunk variables
 opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 opts_chunk$set(fig.width=7, fig.height=7)
@@ -105,30 +105,33 @@ table(clust)
 
 ```{r calculateSumFactors_norm_GSM3872434_allCells}
 # deconvolve
-sce <- computePooledFactors(sce, cluster=clust, min.mean=0.1)
-# set size factors
-deconv.sf <- sizeFactors(sce)
+
+
+# seet size factors
+
+
 # size factors distribution summary
-summary(deconv.sf)
+
+
 ```
 
 Plot deconvolution size factors against library size factors:
 
 ```{r scatter_deconvSf_libSf_prep_norm_GSM3872434_allCells}
 # compute library size factors
-lib.sf <- librarySizeFactors(sce)
 
-deconvDf <- data.frame(lib.sf, deconv.sf,
-			"SampleGroup" = sce$SampleGroup,
-			"sum" = sce$sum,
-			"mito_content" = sce$subsets_Mito_percent)
+
+# make data frame keeping library and deconvolution size factors for plotting
+
+
 ```
 
 ```{r scatter_deconvSf_libSf_colBy_more_norm_GSM3872434_allCells}
+# plot deconv.sf against lib.sf
+
 # colour by library size
-sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=sum)) +
-  geom_point()
-sp
+
+
 ```
 
 ### Apply size factors
@@ -140,8 +143,8 @@ differences. We use `scater::logNormCounts()`.
 -->
 
 ```{r logNormCounts_norm_GSM3872434_allCells}
-sce <- logNormCounts(sce) # adds logcounts
-print(assayNames(sce))
+
+
 ```
 
 ## Exercise 2 : sctransform
@@ -174,18 +177,15 @@ cells that stand out are important at this step, but we focus on the global tren
 Derive gene and cell attributes from the UMI matrix.
 
 ```{r attr_comp_sct_GSM3872434_allCells}
-gene_attr <- data.frame(mean = rowMeans(counts), 
-                        detection_rate = rowMeans(counts > 0),
-                        var = apply(counts, 1, var))
-gene_attr$log_mean <- log10(gene_attr$mean)
-gene_attr$log_var <- log10(gene_attr$var)
-rownames(gene_attr) <- rownames(counts)
-cell_attr <- data.frame(n_umi = colSums(counts),
-                        n_gene = colSums(counts > 0))
-rownames(cell_attr) <- colnames(counts)
+
+
+
+
+
+
 ```
 
-Mean-variance relationship
+Mean-variance relationship plot
 
 <!--
 For the genes, we can see that up to a mean UMI count of 0 the variance follows
@@ -195,13 +195,13 @@ UMI count show overdispersion compared to Poisson.
 -->
 
 ```{r attr_plot_sct_GSM3872434_allCells}
-ggplot(gene_attr, aes(log_mean, log_var)) + 
-  geom_point(alpha=0.3, shape=16) + 
-  geom_density_2d(size = 0.3) +
-  geom_abline(intercept = 0, slope = 1, color='red')
+
+
+
+
 ```
 
-Mean-detection-rate relationship
+Mean-detection-rate relationship plot
 
 <!--
 In line with the previous plot, we see a lower than expected detection rate in the medium expression range. However, for the highly expressed genes, the rate is at or very close to 1.0 suggesting that there is no zero-inflation in the counts for those genes and that zero-inflation is a result of overdispersion, rather than an independent systematic bias.
@@ -209,12 +209,9 @@ In line with the previous plot, we see a lower than expected detection rate in t
 
 ```{r scatter_detecRate_logMean_sct_GSM3872434_allCells}
 # add the expected detection rate under Poisson model
-x = seq(from = -3, to = 2, length.out = 1000)
-poisson_model <- data.frame(log_mean = x, detection_rate = 1 - dpois(0, lambda = 10^x))
-ggplot(gene_attr, aes(log_mean, detection_rate)) + 
-  geom_point(alpha=0.3, shape=16) + 
-  geom_line(data=poisson_model, color='red') +
-  theme_gray(base_size = 8)
+
+
+
 ```
 
 ### Transformation
@@ -252,12 +249,16 @@ future::plan(strategy = 'multicore', workers = 4)
 options(future.globals.maxSize = 10 * 1024 ^ 3)
 
 set.seed(44)
-vst_out <- sctransform::vst(counts,
-                            latent_var = c('log_umi'),
-                            return_gene_attr = TRUE,
-                            return_cell_attr = TRUE,
-                            show_progress = FALSE)
-sctransform::plot_model_pars(vst_out)
+
+# now transform:
+
+
+
+
+
+
+
+
 ```
 
 Inspect model:
@@ -273,10 +274,11 @@ rowData(sce) %>%
   as.data.frame %>%
   filter(Symbol %in% c('RPL10', 'FTL'))
 
-sctransform::plot_model(vst_out,
-                        counts,
-                        c('ENSG00000147403', 'ENSG00000087086'),
-                        plot_residual = TRUE)
+# plot model data for these two genes:
+
+
+
+
 ```
 
 Distribution of residual mean:
