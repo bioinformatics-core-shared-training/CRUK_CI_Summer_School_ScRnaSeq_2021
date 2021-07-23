@@ -218,14 +218,6 @@ slide:not(.current) .plotly.html-widget{
 
 </article></slide><slide class=""><hgroup><h2>sctransform</h2></hgroup><article  class="smaller " id="sctransform">
 
-<p>With scaling normalisation a correlation remains between the mean and variance of expression (heteroskedasticity).</p>
-
-<p>This affects downstream dimensionality reduction as the few main new dimensions are usually correlated with library size.</p>
-
-<p>sctransform addresses the issue by regressing library size out of raw counts and providing residuals to use as normalized and variance-stabilized expression values in downstream analysis.</p>
-
-</article></slide><slide class=""><hgroup><h2>sctransform</h2></hgroup><article  class="smaller " id="sctransform-1">
-
 <div class="columns-2">
 <p>With scaling normalisation a correlation remains between the mean and variation of expression (heteroskedasticity).</p>
 
@@ -247,7 +239,7 @@ https://rawgit.com/ChristophH/sctransform/supp_html/supplement/variance_stabiliz
 For the genes, we can see that up to a mean UMI count of ca. 0.1 the variance follows the line through the origin with slop one, i.e. variance and mean are roughly equal as expected under a Poisson model. However, genes with a higher average UMI count show overdispersion compared to Poisson.
 -->
 
-</article></slide><slide class=""><hgroup><h2>sctransform</h2></hgroup><article  class="smaller " id="sctransform-2">
+</article></slide><slide class=""><hgroup><h2>sctransform</h2></hgroup><article  class="smaller " id="sctransform-1">
 
 <p>Variables</p>
 
@@ -270,7 +262,7 @@ For the genes, we can see that up to a mean UMI count of ca. 0.1 the variance fo
 <li><p>expect mean of 0 and stable variance across the range of expression</p></li>
 </ul>
 
-</article></slide><slide class=""><hgroup><h2>sctransform</h2></hgroup><article  class="smaller " id="sctransform-3">
+</article></slide><slide class=""><hgroup><h2>sctransform</h2></hgroup><article  class="smaller " id="sctransform-2">
 
 <p>Example of the transformation outcome for two genes:</p>
 

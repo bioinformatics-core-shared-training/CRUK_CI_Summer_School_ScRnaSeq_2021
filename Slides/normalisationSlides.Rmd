@@ -100,16 +100,6 @@ Steps:
 
 ## sctransform
 
-With scaling normalisation a correlation remains between the mean and variance
-of expression (heteroskedasticity).
-
-This affects downstream dimensionality reduction as the few main new dimensions are usually correlated with library size.
-
-sctransform addresses the issue by regressing library size out of raw counts
-and providing residuals to use as normalized and variance-stabilized expression values in downstream analysis.
-
-## sctransform
-
 <div class="columns-2">
 
 With scaling normalisation a correlation remains between the mean and variation
