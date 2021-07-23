@@ -366,9 +366,47 @@ sce.umap + facet_wrap(~ sce$SampleGroup)
 saveRDS(sce, "~/Course_Materials/scRNAseq/Robjects/caron_postDeconv_5hCellPerSpl_dimRed.Rds")
 ```
 
+## Extra Material 
+
 ## Session information
 
 ```{r}
 sessionInfo()
 ```
 
+## Extra Material 
+<details> Seurat Analysis 
+Seurat is another single cell analysis package and provides useful tools for analysing PCA loadings. We will convert our `SCE` object to a `Seurat` object to use these tools. 
+```{r}
+library(org.Hs.eg.db)
+symb <- mapIds(org.Hs.eg.db, keys=rownames(sce), keytype="ENSEMBL", column="SYMBOL")
+# we want to use gene symbols instead of Ensembl gene IDs 
+# this command will enable that
+hvgs_symbols<-rowData(sce)[hvgs,"Symbol"]
+rownames(sce)<-uniquifyFeatureNames(rownames(sce), symb)
+
+# we convert our SCE object to a Seurat object 
+library(Seurat)
+seurat_obj<-as.Seurat(sce, counts="counts", data="logcounts")
+
+# scale the data for PCA for the highly variable genes 
+seurat_obj <- ScaleData(seurat_obj, features = hvgs_symbols)
+# run PCA 
+seurat_obj <- RunPCA(seurat_obj, features = hvgs_symbols, verbose = F)
+# PCA Plot 
+DimPlot(seurat_obj,reduction = "pca")
+```
+
+```{r}
+VizDimLoadings(seurat_obj,dims=1:2)
+```
+
+```{r}
+DimHeatmap(seurat_obj, dims = 1, cells = 500, balanced = TRUE)
+```
+
+```{r}
+DimHeatmap(seurat_obj, dims = 1:6, cells = 500, balanced = TRUE)
+```
+
+<\details>
