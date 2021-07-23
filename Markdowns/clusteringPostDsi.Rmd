@@ -2,16 +2,14 @@
 title: "CRUK CI Summer School 2020 - introduction to single-cell RNA-seq analysis"
 author: "Stephane Ballereau"
 date: "July 2021"
+subtitle: Clustering
 output:
   html_document:
     toc: yes
-    toc_depth: '5'
-    df_print: paged
-  html_notebook:
-    number_sections: yes
-    toc: yes
-    toc_float: yes
     toc_depth: 5
+    toc_float: yes
+    number_sections: yes
+    df_print: paged
     fig_caption: yes
     self_contained: yes
     fig_width: 6
@@ -19,36 +17,24 @@ output:
   pdf_document:
     toc: yes
     toc_depth: '5'
-subtitle: Clustering
 params:
   projDir: /home/ubuntu/Course_Materials/scRNAseq
   dirRel: '..'
   inpDirBit: '.'
   outDirBit: '.'
   bookType: mk
-  cacheBool: no
+  cacheBool: FALSE
   setName: caron
   splSetToGet: PBMMC,ETV6-RUNX1
   setSuf: _5hCellPerSpl
   dsiSuf: _dsi
 ---
 
-<!--
-  setSuf: '_allCells'
-source /home/baller01/.local/share/r-miniconda/bin/activate r-reticulate
-source /home/baller01/.local/share/r-miniconda/bin/deactivate r-reticulate
-  inpDirBit: AnaWiSce/Ana1
-  outDirBit: AnaWiSce/Ana1
--->
-
 ```{r, include=FALSE, eval=TRUE}
 params2 <- list(
-  #"projDir" = "/ssd/personal/baller01/20200511_FernandesM_ME_crukBiSs2020",
   "projDir" = "..",
   "dirRel" = "..",
-  #"inpDirBit" = "CourseMaterials",
-  #"outDirBit" = "CourseMaterials",
-  "inpDirBit" = ".", # course machine, in CourseMaterials/ Markdowns or Scripts
+  "inpDirBit" = ".", # course machine, in CourseMaterials/Markdowns
   "outDirBit" = ".", 
   "bookType" = "km",
   "cacheBool"  = FALSE,
@@ -80,10 +66,14 @@ if(paramsToUse$bookType == "mk"){
 	dsiSuf <- '_dsi'
 }
 
-splSetVec <- unlist(strsplit(splSetToGet, ",")) # params may not be read in if knitting book.
+splSetVec <- unlist(strsplit(splSetToGet, ","))
 splSetToGet2 <- gsub(",", "_", splSetToGet)
 nbPcToComp <- 50
 figSize <- 7
+
+# have analysis name to use in header
+anaStg <- sprintf("%s%s", splSetToGet2, setSuf)
+anaStg <- gsub("_", "-", anaStg)
 ```
 
 ```{r clusPostDsi_Caron.knitr_options, echo=FALSE, results="hide", message=FALSE}
@@ -109,35 +99,25 @@ options(stringsAsFactors = FALSE)
 set.seed(123) # for reproducibility
 ```
 
-```{r debug1_clusteringPostDsi, eval=FALSE}
-capabilities("cairo")
-getOption('bitmapType')
-options(bitmapType='cairo')
-getOption('bitmapType')
-```
-
 ```{r, warning=FALSE, message=FALSE}
-library(ggplot2)
-library(scater)
-library(scran)
-library(tidyverse)
-library(bluster) # for clustering
-library(dynamicTreeCut)
+library(tidyverse) # data wrangling and plotting (ggplot2)
+library(scater) # scRnaSeq QC
+library(scran) # scRnaSeq normalisation
+library(bluster) # scRnaSeq clustering
+library(dynamicTreeCut) # tree cutting in clustering
 library(cluster) # for silhouette
 library(igraph) # for graph-based clustering and plotting networks 
-library(reticulate)
-library(leiden) # for community detection
-library(pheatmap)
-library(glue)
-library(patchwork)
+library(reticulate) # for graph-baed clustering with leiden
+library(leiden) # for community detection (clustering)
+library(pheatmap) # for heatmap plotting
+library(patchwork) # to combine plots
 fontsize <- theme(axis.text=element_text(size=12), axis.title=element_text(size=16))
 ```
 
+
 # Clustering with '`r splSetToGet`' and '`r setSuf`' {#clustering`r anaStg`Top}
 
-<!-- TODO: get image file
 <img src="../Images/Andrews2017_Fig1.png" style="margin:auto; display:block" />
--->
 
 Source: [clustering methods](https://hemberg-lab.github.io/scRNA.seq.course/biological-analysis.html##clustering-methods) in the Hemberg group material and [its 'biocellgen variant'](https://biocellgen-public.svi.edu.au/mig_2019_scrnaseq-workshop/public/clustering-and-cell-annotation.html#clustering-methods.), with some of its text copied with few edits only. Also see the [OSCA chapter on clustering](https://osca.bioconductor.org/clustering.html) and a [benchmark study](https://f1000research.com/articles/7-1297#ref-2).
 
@@ -154,6 +134,7 @@ We will load the R file keeping the SCE (SingleCellExperiment) object with the n
 -->
 
 ```{r}
+# read in 
 sce0 <- readRDS("../Robjects/caron_postDeconv_5hCellPerSpl.Rds")
 
 # Read mnn.out object in:
@@ -323,7 +304,7 @@ In some areas cells are not all assigned to the same cluster.
 
 We can also check the contribution of each sample by painting cells by 'SampleName':
 
-```{r}
+```{r fig.width=2*5, fig.height=ceiling(nlevels(droplevels(sce$SampleGroup))/2)*5}
 g <- plotTSNE(sce, colour_by = "SampleName", shape_by="SampleGroup") +
   facet_wrap(. ~ sce$SampleGroup)
 g
@@ -623,7 +604,10 @@ One may also use multiple metrics rather than only one and check how they concor
 ```{r NbClust_run, eval=TRUE}
 # run only once and save outcome to file to load later.
 
+#tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postDeconv%s_500CellK2to20NbClust.Rds",
+#                 projDir, outDirBit, setName, setSuf)
 tmpFn <- str_glue("{projDir}/{outDirBit}/Robjects/{setName}_postDeconv{setSuf}_500CellK2to20NbClust.Rds")
+tmpFn
 if(file.exists(tmpFn))
 {
 	nb <- readRDS(file=tmpFn)
@@ -849,41 +833,17 @@ colnames(tmpTab) = paste("15-step", colnames(tmpTab) , sep = "_")
 pheatmap(tmpTab)
 ```
 
-The network may also be built and clusters identified at once with `scran::clusterSNNGraph()` that also allows for large data sets to first cluster cells with k-means into a large number of clusters and then perform graph-based clustering on cluster centroids.
+The network may also be built and clusters identified at once with `bluster::clusterRows()` that also allows for large data sets to first cluster cells with k-means into a large number of clusters and then perform graph-based clustering on cluster centroids.
 
 ```{r, warning=FALSE}
-# set use.kmeans to TRUE to 'create centroids that are then subjected to graph-based clustering' (see manual)
-# with kmeans.centers default (square root of the number of cells)
-# or set kmeans.centers to another value, eg 30
-if(FALSE)
-{
-clustersOnce <- clusterSNNGraph(sce,
-			     #use.dimred="PCA",
-			     use.dimred="corrected",
-			     use.kmeans=TRUE,
-			     kmeans.centers = 50,
-			     full.stats=TRUE)
-}
-
 mat <- reducedDim(sce, "corrected")
 dim(mat)
 
 set.seed(100) # for the k-means
-two.out <- clusterRows(mat, TwoStepParam())
-two.out <- clusterRows(mat, TwoStepParam(
-  first = KmeansParam(centers=100),
-  second = NNGraphParam())
-)
-table(two.out)
-plotTSNE(sce, colour_by=I(two.out))
-plotUMAP(sce, colour_by=I(two.out))
-
-
 two.out <- clusterRows(mat, TwoStepParam(
   first = KmeansParam(centers=100),
   second = NNGraphParam(k=4, cluster.fun = "walktrap")),
   full = TRUE)
-class(two.out)
 plotTSNE(sce, colour_by=I(two.out$clusters))
 plotUMAP(sce, colour_by=I(two.out$clusters))
 
@@ -1296,8 +1256,11 @@ Concordance can also be measured with the adjusted Rand index that ranges betwee
 We first show clusters on a t-SNE plot:
 
 ```{r, fig.height=6, fig.width=8}
-cluToUse <- "cluster.out.10"
-plotTSNE(sce, colour_by = cluToUse) + ggtitle("walktrap, 10 clusters")
+#cluToUse <- "cluster.out.10"
+cluToUse <- "louvain"
+plotTSNE(sce, colour_by = cluToUse) +
+  #ggtitle("walktrap, 10 clusters")
+  ggtitle("louvain clusters")
 ```
 
 Having identified clusters, we now display the level of expression of cell type marker genes to quickly match clusters with cell types (e.g. MS4A1 for B cell marker gene). For each marker we will plot its expression on a t-SNE, and show distribution across each cluster on a violin plot.
@@ -1371,7 +1334,6 @@ ctx <- "Memory CD4+ T cells"
 plotExpression2(sce, ctx, markGenesAvail)
 
 # B cells
-##plotExpression(sce, exprs_values = "reconstructed", x=cluToUse, colour_by=cluToUse, features=markGenes[6]) + ggtitle("B cells")
 ctx <- "B cells"
 plotExpression2(sce, ctx, markGenesAvail)
 
@@ -1407,9 +1369,6 @@ plotExpression2(sce, ctx, markGenesAvail)
 Write SCE object to file.
 
 ```{r}
-#tmpFn <- sprintf("%s/%s/Robjects/%s_sce_nz_postDeconv%s%s_%s_clust.Rds",
-#                 projDir, outDirBit, setName, setSuf, dsiSuf, splSetToGet2)
-# eg caron_postDeconv_5hCellPerSpl_dsi_PBMMC_ETV6-RUNX1_clust.Rds
 tmpFn <- str_glue("{projDir}/{outDirBit}/Robjects/{setName}_postDeconv{setSuf}{dsiSuf}_{splSetToGet2}_clust.Rds")
 print(tmpFn)
 saveRDS(sce, file=tmpFn)

@@ -18,37 +18,26 @@ output:
     code_folding: hide
 ---
 
-# Normalisation - Exercises {#NormalisationChallengeTop}
+# Normalisation - Exercises
 
 Exercise: apply the deconvolution and SCTransform normalisations methods on a
 single sample: ETV6-RUNX1_1 (aka GSM3872434).
 
 ```{r norm_Caron.knitr_options, echo=FALSE, results="hide", message=FALSE}
-cacheBool <- !TRUE
 require(knitr)
-opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE, cache=cacheBool)
+# set working directory# set working directory# set working directory
+knitr::opts_knit$set(root.dir = '/home/ubuntu/Course_Materials/scRNAseq/Markdowns')
+# set other chunk variables
+opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 opts_chunk$set(fig.width=7, fig.height=7)
-#opts_chunk$set(dev="CairoPNG")
 set.seed(123) # for reproducibility
-```
-
-```{r GSM3872434_variables_norm}
-#normPlotDirBit <- "Plots/Norm" # not use anymore
-
-projDir <- ".." # or /home/ubuntu/CourseMaterials/scRNAseq
-dirRel <- ".."
-outDirBit <- "CourseMaterials"
-setName <- tolower("Caron")
-writeRds <- TRUE # FALSE
 ```
 
 ```{r libraries_norm_GSM3872434_allCells, include=FALSE, results='hide', message=FALSE, warning=FALSE}
 library(scater)
 library(scran)
-library(ggplot2)
-library(dplyr)
+library(tidyverse)
 library(BiocSingular)
-#library(Cairo)
 library(BiocParallel)
 
 bpp <- MulticoreParam(7)
@@ -57,37 +46,18 @@ bpp <- MulticoreParam(7)
 ## Load object
 
 ```{r GSM3872434_readIn}
-getwd()
 # Read object in:
-dir("../CourseMaterials/Robjects/")
-tmpFn <- "../CourseMaterials/Robjects/Caron_filtered.rds"
-sce <- readRDS(tmpFn)
-sce
-
-# PATCH names
-samplesheet <- readr::read_tsv("../CourseMaterials/Data/sample_sheet.tsv")
-samplesheet %>%
-	as.data.frame() %>%
-	DT::datatable(rownames = FALSE, options = list(dom="tpl", nrows=20))
-
-dd <- colData(sce) %>% data.frame()
-dd$SampleId <- dd$Sample
-dd <- dd  %>%
-  left_join(samplesheet[, c("SampleId", "SampleName")], by="SampleId") %>%
-  DataFrame()
-colData(sce) <- dd
+# remember getwd() and dir()
+sce <- readRDS("../Robjects/Caron_filtered.rds")
+colData(sce)$SampleName <- colData(sce)$Sample
 ```
 
 Select cells for ETV6-RUNX1_1:
 
-```{r GSM3872434_downsample_variables, eval=TRUE}
-setSuf <- "_ETV6-RUNX1_1"
-```
-
 ```{r GSM3872434_downsample, eval=TRUE}
 # have new list of cell barcodes for each sample
-sce.nz.master <- sce
-vec.bc <- colData(sce.nz.master) %>%
+sce.master <- sce
+vec.bc <- colData(sce.master) %>%
 	data.frame() %>%
 	filter(SampleName == "ETV6-RUNX1_1") %>%
 	group_by(SampleName) %>%
@@ -97,15 +67,15 @@ vec.bc <- colData(sce.nz.master) %>%
 Number of cells in the sample:
 
 ```{r GSM3872434_barcodes}
-table(colData(sce.nz.master)$Barcode %in% vec.bc)
+table(colData(sce.master)$Barcode %in% vec.bc)
 ```
 
 Subset cells from the SCE object:
 
 ```{r GSM3872434_subset_sce}
-tmpInd <- which(colData(sce.nz.master)$Barcode %in% vec.bc)
-sce <- sce.nz.master[,tmpInd]
-#sce
+tmpInd <- which(colData(sce.master)$Barcode %in% vec.bc)
+sce <- sce.master[,tmpInd]
+sce
 ```
 
 Check columns data:
@@ -119,13 +89,13 @@ table(colData(sce)$SampleName)
 # mind that genes were filtered using all cells, not just those sampled here.
 -->
 
-## Deconvolution
+## Exercise 1 : Deconvolution
 
 Cluster cells then normalise.
 
 ### Cluster cells
 
-```{r comp_quickClus_norm_GSM3872434_allCells, eval=TRUE}
+```{r comp_quickClus_norm_GSM3872434_allCells}
 set.seed(100) # clusters with PCA from irlba with approximation
 clust <- quickCluster(sce) # slow with all cells.
 table(clust)
@@ -133,9 +103,9 @@ table(clust)
 
 ### Compute size factors
 
-```{r calculateSumFactors_norm_GSM3872434_allCells, eval=TRUE}
+```{r calculateSumFactors_norm_GSM3872434_allCells}
 # deconvolve
-sce <- computeSumFactors(sce, cluster=clust, min.mean=0.1)
+sce <- computePooledFactors(sce, cluster=clust, min.mean=0.1)
 # set size factors
 deconv.sf <- sizeFactors(sce)
 # size factors distribution summary
@@ -145,7 +115,7 @@ summary(deconv.sf)
 Plot deconvolution size factors against library size factors:
 
 ```{r scatter_deconvSf_libSf_prep_norm_GSM3872434_allCells}
-
+# compute library size factors
 lib.sf <- librarySizeFactors(sce)
 
 deconvDf <- data.frame(lib.sf, deconv.sf,
@@ -154,16 +124,7 @@ deconvDf <- data.frame(lib.sf, deconv.sf,
 			"mito_content" = sce$subsets_Mito_percent)
 ```
 
-```{r scatter_deconvSf_libSf_colBy_sourceName_plot_norm_GSM3872434_allCells, eval=FALSE}
-# colour by sample type
-sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=SampleGroup)) +
-  geom_point()
-
-# Split by sample type:
-#sp + facet_wrap(~source_name)
-```
-
-```{r scatter_deconvSf_libSf_colBy_more_norm_GSM3872434_allCells, include=FALSE}
+```{r scatter_deconvSf_libSf_colBy_more_norm_GSM3872434_allCells}
 # colour by library size
 sp <- ggplot(deconvDf, aes(x=lib.sf, y=deconv.sf, col=sum)) +
   geom_point()
@@ -183,7 +144,7 @@ sce <- logNormCounts(sce) # adds logcounts
 print(assayNames(sce))
 ```
 
-## SCTransform
+## Exercise 2 : sctransform
 
 <!--
 With scaling normalisation a correlation remains between the mean and variation
@@ -308,7 +269,6 @@ print(vst_out$model_str)
 We will look at several genes in more detail.
 
 ```{r plot_model_1_sct_GSM3872434_allCells}
-#sctransform::plot_model(vst_out, counts, c('MALAT1', 'RPL10', 'FTL'), plot_residual = TRUE)
 rowData(sce) %>%
   as.data.frame %>%
   filter(Symbol %in% c('RPL10', 'FTL'))
@@ -333,16 +293,6 @@ ggplot(vst_out$gene_attr, aes(residual_variance)) +
   geom_histogram(binwidth=0.1) +
   geom_vline(xintercept=1, color='red') +
   xlim(0, 10)
-```
-
-Variance against mean (residuals):
-
-```{r plot_model_resVar_resMean_sct_GSM3872434_allCells}
-ggplot(vst_out$gene_attr, aes(x=residual_mean, y=residual_variance)) +
-	geom_point(alpha=0.3, shape=16) + 
-  xlim(0, quantile(vst_out$gene_attr$residual_mean, probs=0.95)) +
-	ylim(0, quantile(vst_out$gene_attr$residual_variance, probs=0.95)) +
-	geom_density_2d()
 ```
 
 Variance against mean (genes):
@@ -378,33 +328,15 @@ Genes that are expressed in fewer than 5 cells are not used and not returned,
 so to add vst_out$y as an assay we need to remove the missing genes.
 
 ```{r subsetGenes_sct_GSM3872434}
-# genes that are expressed in fewer than 5 cells are not used and not returned
-# so to add vst_out$y as an assay we need to ditch the missing genes completely.
-# https://github.com/ChristophH/sctransform/issues/27
-
-#rownames(vst_out$y)
-
 sceOrig <- sce
 sceOrig
-tmpInd <- which(rownames(sce) %in% rownames(vst_out$y))
-cols.meta <- colData(sceOrig)
-rows.meta <- rowData(sceOrig)
-
-new.counts <- counts(sceOrig)[tmpInd, ]
-sce <- SingleCellExperiment(list(counts=new.counts))
-
-# reset the column data on the new object
-colData(sce) <- cols.meta
-rowData(sce) <- rows.meta[tmpInd, ]
-assayNames(sce)
-```
-Copy normalised counts:
-
-```{r copyVstMat_sct_GSM3872434}
-vstMat <- as(vst_out$y[rownames(sce),], "dgCMatrix")
-all(colnames(vstMat) == sce$Barcode)
-colnames(vstMat) <- NULL
-assay(sce, "sctrans_norm") <- vstMat # as(vst_out$y[rownames(sce),], "dgCMatrix")
-#assayNames(sce)
-sce
+geneOverlap <- rownames(sce) %in% rownames(vst_out$y)
+if(!all(geneOverlap))
+{
+  table(rownames(sce) %in% rownames(vst_out$y))
+  tmpInd <- which(rownames(sce) %in% rownames(vst_out$y))
+  sce <- sce[tmpInd,]
+  assayNames(sce)
+}
+rm(sceOrig)
 ```
