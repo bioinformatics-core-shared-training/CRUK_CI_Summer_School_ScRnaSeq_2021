@@ -15,7 +15,7 @@ library(scran)
 
 
 ```{r Load}
-sce <- readRDS("../Robjects/caron_postSct_5hCellPerSpl.Rds")
+sce <- readRDS("~/Course_Materials/scRNAseq/Robjects/caron_postSct_5hCellPerSpl.Rds")
 ```
 
 ## Challenge 1
