@@ -78,5 +78,3 @@ knitr::include_graphics('Images/trajectory_2.png')
 * May work with single time-point if ongoing differentiation process (It is better to have multiple experimental time points) 
 
 * Be aware, any dataset can be forced into a trajectory without any biological meaning!
-
-## 
