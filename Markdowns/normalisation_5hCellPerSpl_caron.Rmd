@@ -1,19 +1,20 @@
 ---
 title: "CRUK CI Summer School 2020 - introduction to single-cell RNA-seq analysis"
-subtitle: 'Normalisation - Caron data set - 500 cells per sample'
-
 author: "Stephane Ballereau"
+subtitle: Normalisation - Caron data set - 500 cells per sample
 output:
   html_document:
     df_print: paged
     toc: yes
-    number_sections: true
+    number_sections: yes
     code_folding: hide
   html_notebook:
     code_folding: hide
     toc: yes
     toc_float: yes
-    number_sections: true
+    number_sections: yes
+  pdf_document:
+    toc: yes
 ---
 
 # Normalisation - Caron set {#NormalisationCaron5hcpsTop}
@@ -90,6 +91,7 @@ sce
 
 ```{r}
 # rename column(s) if need be
+# we need 'SampleName'
 dd <- colData(sce) %>%
   data.frame() %>%
   rename(SampleName=Sample) %>%
@@ -119,9 +121,6 @@ For analyses to run within the time allocated to sessions,
 we will subsample cells down to 500 per sample:
 
 ```{r Caron_norm_downsample, eval=FALSE}
-# have a variable to keep information on downsampling
-# to use to describe data sets and files.     
-setSuf <- "_5hCellPerSpl"
 # number of cells to keep
 nbCells <- 500
 
@@ -132,7 +131,17 @@ vec.bc <- colData(sce) %>%
 	group_by(SampleName) %>%
 	sample_n(nbCells) %>%
 	pull(Barcode)
+```
 
+```{r, include=FALSE}
+# when re-running after a first downsampling and downstream analysis,
+# read list of barcodes selected instead.
+sceTmp <- readRDS("../Robjects/caron_postQc_5hCellPerSpl.Rds")
+vec.bc <- colData(sceTmp)$Barcode
+rm(sceTmp)
+```
+
+```{r}
 # subsetting a SCE (SingleCellExperiment) object requires indices not names
 # so find index for each cell we will keep:
 tmpInd <- which(colData(sce)$Barcode %in% vec.bc) # mind QC metrics will be wrong
@@ -155,13 +164,9 @@ Update per-gene QC metrics.
 # check for lowly expressed genes:
 -->
 
-```{r Caron_norm_filterGenes, eval=FALSE}
-# find out which genes are expressed 
-lowExpGenes <- rowSums(counts(sce)) > 5
-table(lowExpGenes)
-
+```{r Caron_norm_filterGenes}
 # for each gene in each cell: is it expressed?
-exprLogic <- counts(sce) > 0 # pot exerc gt 2, 5
+exprLogic <- counts(sce) > 0
 # count cells where gene is expressed,
 # and ask if the number of cells is gt 5
 detectedGenes <- rowSums(exprLogic) > 5
@@ -172,6 +177,9 @@ table(detectedGenes)
 sce <- sce[detectedGenes,] # removes genes but does not update QC metrics.
 
 # update cell QC metrics
+sce$sum <- NULL
+sce$detected <- NULL
+sce$total <- NULL
 sce <- addPerCellQC(sce)
 
 # update gene QC metrics
@@ -180,10 +188,9 @@ sce <- addPerFeatureQC(sce, BPPARAM = bpp)
 
 We write the R object to 'caron_postQc_5hCellPerSpl.Rds'.
 
-```{r Caron_downsample_write}
+```{r Caron_downsample_write, eval=FALSE}
 # Write object to file
-#saveRDS(sce, "../Robjects/caron_postQc_5hCellPerSpl.Rds")
-sce <- readRDS("../Robjects/caron_postQc_5hCellPerSpl.Rds")
+saveRDS(sce, "../Robjects/caron_postQc_5hCellPerSpl.Rds")
 ```
 
 ## Scaling normalization
@@ -389,13 +396,9 @@ print(assayNames(sce))
 
 #### Save object
 
-```{r sce_copy_norm_Caron_5hCellPerSpl}
-sceDeconv <- sce
-```
-
-```{r sce_write_norm_Caron_5hCellPerSpl, eval=FALSE}
+```{r sce_write_norm_Caron_5hCellPerSpl}
 # write to file
-saveRDS(sceDeconv, "../Robjects/caron_postDeconv_5hCellPerSpl.Rds")
+saveRDS(sce, "../Robjects/caron_postDeconv_5hCellPerSpl.Rds")
 ```
 
 ## Exercise 1
@@ -682,6 +685,7 @@ dd %>% tibble::rownames_to_column("ID") %>%
 	left_join(as.data.frame(rowData(sce))[,c("ID", "Symbol")], "ID") %>%
 	DT::datatable(rownames = FALSE)
 ```
+
 ### Storage
 
 Check transformed values:
@@ -706,8 +710,6 @@ so to add vst_out$y as an assay we need to remove the missing genes.
 # so to add vst_out$y as an assay we need to ditch the missing genes completely.
 # https://github.com/ChristophH/sctransform/issues/27
 
-sceOrig <- sce
-sceOrig
 geneOverlap <- rownames(sce) %in% rownames(vst_out$y)
 if(!all(geneOverlap))
 {
@@ -716,7 +718,6 @@ if(!all(geneOverlap))
   sce <- sce[tmpInd,]
   assayNames(sce)
 }
-rm(sceOrig)
 ```
 
 ```{r copyVstMat_sct_Caron_5hCellPerSpl}
@@ -744,6 +745,10 @@ Exercise: apply the sctransform normalisation on a single sample: ETV6-RUNX1_1 (
 
 In exercise 1, you have made a new SCE object with cells for SampleName 'ETV6-RUNX1_1'.
 You will now inspect the mean-variance relationship and apply sctransform to that data.
+
+```{r}
+knit_exit()
+```
 
 ## Effectiveness
 
@@ -1071,8 +1076,8 @@ p
 
 ## Session information
 
-<details>
+<!--<details>-->
 ```{r}
 sessionInfo()
 ```
-</details>
+<!--</details>-->
