@@ -367,7 +367,7 @@ head(combined[["c8"]])[,1:9]
 ```
 
 # Exercise 
-Find marker genes for cluster 10.
+Find marker genes for cluster 11.
 Find the challenge markdown for this section in the course materials folder.
 
 1. Visualize one of the top marker genes in a violin and tSNE plot. 

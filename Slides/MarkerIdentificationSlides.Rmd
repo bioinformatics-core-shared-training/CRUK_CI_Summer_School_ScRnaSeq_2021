@@ -53,7 +53,7 @@ Recommendations:
 
 ## Differential expression
 
-```{r echo=FALSE, out.width= "50%", out.extra='style="float:left; padding:20px"'}
+```{r echo=FALSE, out.width= "60%", out.extra='style="float:left; padding:20px"'}
 knitr::include_graphics('Images/tsne_clusters.png')
 ```
 
@@ -182,5 +182,5 @@ Some highlights:
     
 * "Do not forget to account for batch effect"
 
-    * We will model the batch effect (XX) using the `block` command 
+    * We will model the batch effect (SampleGroup) using the `block` command 
 
