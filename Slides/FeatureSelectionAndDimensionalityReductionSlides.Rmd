@@ -6,7 +6,7 @@ output:
   ioslides_presentation:
     widescreen: true
     smaller: true
-    incremental: true 
+    incremental: false 
     logo: Images/crukcc-transparent-small.png
     css: css/stylesheet.css
 ---

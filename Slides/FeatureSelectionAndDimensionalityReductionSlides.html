@@ -3192,17 +3192,17 @@ margin-top: -50px;
 
 </article></slide><slide class=""><hgroup><h2>Dimensionality reduction</h2></hgroup><article  id="dimensionality-reduction" class="smaller ">
 
-<ul class = 'build'>
+<ul>
 <li><p>Cells are characterized by the expression values of all genes –&gt; thousands of dimensions</p></li>
 <li><p>Simplify complexity, so it becomes easier to work with (reduce the number of features/genes).</p>
 
-<ul class = 'build'>
+<ul>
 <li><p>Making clustering step easier</p></li>
 <li><p>Making visualization easier</p></li>
 </ul></li>
 <li><p>Remove redundancies in the data</p>
 
-<ul class = 'build'>
+<ul>
 <li><p>Expression of many genes are correlated, we don’t need so many dimensions to distinguish cell types</p></li>
 <li><p>Identify the most relevant information and overcome the extensive technical noise in scRNA-seq data</p></li>
 </ul></li>
@@ -3215,17 +3215,17 @@ margin-top: -50px;
 
 </article></slide><slide class=""><hgroup><h2>Principal Component Anaalysis (PCA)</h2></hgroup><article  id="principal-component-anaalysis-pca" class="smaller ">
 
-<ul class = 'build'>
+<ul>
 <li><p>It’s a linear algebraic method of dimensionality reduction</p></li>
 <li><p>Finds principal components (PCs) of the data</p>
 
-<ul class = 'build'>
+<ul>
 <li><p>Directions where the data is most spread out = where there is most variance</p></li>
 <li><p>PC1 explains most of the variance in the data, then PC2, PC3, ..</p></li>
 </ul></li>
 <li><p>We will select the most important PCs and use them for clustering cells</p>
 
-<ul class = 'build'>
+<ul>
 <li><p>Instead of 20,000 genes we have now maybe 10 PCs</p></li>
 <li><p>Essentially, each PC represents a robust &lsquo;metagene&rsquo; that combines information across a correlated gene set</p></li>
 </ul></li>
@@ -3256,12 +3256,12 @@ margin-top: -50px;
 
 </article></slide><slide class=""><hgroup><h2>Determine the significant principal components</h2></hgroup><article  id="determine-the-significant-principal-components" class="smaller ">
 
-<ul class = 'build'>
+<ul>
 <li><p>It is important to select the significant PCs for clustering analysis</p></li>
 <li>However, estimating the true dimensionality of a dataset is challenging</li>
 <li><p>Common practices include:</p>
 
-<ul class = 'build'>
+<ul>
 <li><p>Using Elbow plot</p></li>
 <li><p>Using technical noise</p></li>
 <li><p>Trying downstream analysis with different number of PCs (10, 20, or even 50)</p></li>
@@ -3294,14 +3294,14 @@ margin-top: -50px;
 
 </article></slide><slide class=""><hgroup><h2>UMAP</h2></hgroup><article  id="umap" class="smaller ">
 
-<ul class = 'build'>
+<ul>
 <li><p>Non-linear graph-based dimension reduction method like tSNE</p></li>
 <li><p>Newer &amp; efficient = fast</p></li>
 <li><p>Runs on top of PCs</p></li>
 <li><p>Based on topological structures in multidimensional space</p></li>
 <li><p>Unlike tSNE, you can compute the structure once (no randomization)</p>
 
-<ul class = 'build'>
+<ul>
 <li><p>faster</p></li>
 <li><p>you could add data points without starting over</p></li>
 </ul></li>
@@ -3310,7 +3310,7 @@ margin-top: -50px;
 
 </article></slide><slide class=""><hgroup><h2>Commands</h2></hgroup><article  id="commands" class="smaller ">
 
-<ul class = 'build'>
+<ul>
 <li><p>Find variable genes: <code>getTopHVGs</code></p></li>
 <li><p>Calculate PCA: <code>runPCA</code></p></li>
 <li><p>Find optimum number of PCs</p></li>
