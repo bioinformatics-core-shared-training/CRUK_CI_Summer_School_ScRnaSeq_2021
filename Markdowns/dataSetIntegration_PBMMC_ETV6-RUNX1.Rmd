@@ -466,6 +466,8 @@ Draw the TSNE for the fastmnn corrected data. Compare it with the uncorrected TS
 Find the challenge markdown for this section in the course materials folder.
 
 
+### Proportion of Variance
+
 For `fastMNN()`, one useful diagnostic is the proportion of variance within each batch that is lost during MNN correction. Specifically, this refers to the within-batch variance that is removed during orthogonalization with respect to the average correction vector at each merge step. This is returned via the `lost.var` field in the metadata of `mnn.out`, which contains a matrix of the variance lost in each batch (column) at each merge step (row).
 
 
@@ -610,7 +612,7 @@ Another useful diagnostic check is to compare the clustering within each batch t
 
 Ideally, we should see a many-to-1 mapping where the across-batch clustering is nested inside the within-batch clusterings. This indicates that any within-batch structure was preserved after correction while acknowledging that greater resolution is possible with more cells. In practice, more discrepancies can be expected even when the correction is perfect, due to the existence of closely related clusters that were arbitrarily separated in the within-batch clustering. As a general rule, we can be satisfied with the correction if the vast majority of entries are zero, though this may depend on whether specific clusters of interest are gained or lost.
 
-One heatmap is generated for each dataset, where each entry is colored according to the number of cells with each pair of labels (before and after correction), on the log10 scale with pseudocounts (+10) for a smoother color transition (so a minimum value of log10(0+10) == 1). 
+Here is a demonstration with one of the samples, where each entry is colored according to the number of cells with each pair of labels (before and after correction), on the log10 scale with pseudocounts (+10) for a smoother color transition (so a minimum value of log10(0+10) == 1). 
 
 ```{r, heatmaps}
 tabE1 <- table(paste("after", clusters.mnn[linear_rescaled$batch=="ETV6-RUNX1_1"]),
@@ -620,7 +622,7 @@ heatE1 <- pheatmap(log10(tabE1 +10), cluster_rows = FALSE, cluster_cols = FALSE,
 heatE1
 ```
 
-The redistribution of cells from one set of clusters to another, here 'within-batch before' and 'across-batch after' correction, may also be visualized with a clustering tree [clustree](https://cran.r-project.org/package=clustree). See the Extra section at the end of this chapter.
+The redistribution of cells from one set of clusters to another, here 'within-batch before' and 'across-batch after' correction, may also be visualized with a clustering tree [clustree](https://cran.r-project.org/package=clustree). See the Extended section linked on the course website.
  
 #### Rand index
 
