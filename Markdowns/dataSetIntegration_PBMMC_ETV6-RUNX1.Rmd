@@ -16,7 +16,9 @@ output:
 ## Learning Objectives
 
 * Understand why/when batch correction is required
+* Understand where data set integration fits in the workflow
 * Understand one main method for batch correction
+* Understand how to check your batch correction has worked
 
 ```{r library_PBMMC_ETV6-RUNX1, warning=FALSE, message=FALSE}
 library(scater)
