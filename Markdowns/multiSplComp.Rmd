@@ -58,7 +58,7 @@ Differential analyses of multi-condition scRNA-seq experiments can be broadly sp
 
 ## Setting up the data
 
-We will use the data set comprising the 11 samples (500 or 1000 cells per sample) analysed with fastMNN and the nested list of samples.
+We have used the data set comprising the 7 samples (500 cells per sample) analysed with fastMNN.
 
 The differential analyses will be predicated on many of the pre-processing steps covered previously. For brevity, we will not explicitly repeat them here, only noting that we have already merged cells from all samples into the same coordinate system and clustered the merged dataset to obtain a common partitioning across all samples.
 
@@ -110,7 +110,7 @@ samples in with `fastMNN`, here PBMMCs sample first, then ETV6-RUNX1s.
 We finally perform clustering and dimensionality reduction for visualisation.
 
 ```{r}
-# read in 'uncorrected' SCE object with 2000 cells per sample
+# read in 'uncorrected' SCE object with 1200 cells per sample
 # (see code in multiSplCompPrep2kcpsUncorr.R used to make that file
 # from the uncorrected SCE object keeping all cells, too large for simple GitHub)
 uncorrected <- readRDS("../Robjects/caron_sce_nz_postDeconv_1p2kcps_dsi_PBMMC_ETV6-RUNX1_uncorr.Rds")
@@ -147,7 +147,6 @@ g <- buildSNNGraph(merged, use.dimred = "corrected")
 clusters <- igraph::cluster_louvain(g)
 merged$clusters.mnn <- factor(paste0("c", clusters$membership),
                               levels = paste0("c", sort(unique(clusters$membership))))
-#colLabels(merged) <- merged$clusters.mnn
 
 #--- dimensionality-reduction ---#
 merged <- runTSNE(merged, dimred = "corrected", external_neighbors=TRUE)
