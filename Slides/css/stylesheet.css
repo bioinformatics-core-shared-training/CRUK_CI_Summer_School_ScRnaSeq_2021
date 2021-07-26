@@ -45,3 +45,5 @@ img.top {
   margin-top: -50px;
 }
 
+
+.forceBreak { -webkit-column-break-after: always; break-after: column; }
