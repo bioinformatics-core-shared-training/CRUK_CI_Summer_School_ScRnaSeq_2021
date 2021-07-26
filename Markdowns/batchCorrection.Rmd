@@ -64,6 +64,7 @@ sample2.nz.sce <- SingleCellExperiment(list(counts=counts(sce[, sce$Run %in% c("
 saveRDS(sample1.nz.sce, "Robjects/BC_sample1.rds")
 saveRDS(sample2.nz.sce, "Robjects/BC_sample2.rds")
 ```
+The above two code chunks just illustrate how the starting demonstration files for this chapter were made, if you are working from our github repo you will not need this. if you are testing batch corrections on your own samples, for this first part, read in each sample as a separate sce object.
 
 ```{r}
 sample1.sce <- readRDS("Robjects/BC_sample1.rds")
@@ -122,6 +123,7 @@ samples.info <- data.frame("Cell"=colnames(all.samp.exprs),
 separate.pca.merge <- merge(separate.hvg.pcs, samples.info, by='Cell')
 
 ```
+You can merge and plot the PCA results.
 
 ```{r sep_plot_pca_batch_GSM3872442}
 ggplot(separate.pca.merge, aes(x=PC1, y=PC2, fill=Run)) +
@@ -129,7 +131,7 @@ ggplot(separate.pca.merge, aes(x=PC1, y=PC2, fill=Run)) +
   theme_minimal()
 ```
 
-Plot PC1-PC2 plane, with cells colored by 'Run' (and sized according to library size):
+It is easier to bind the two sce objects together into a single sce (remember to insure the colData has the same columns) and the plot whatever you need.
 
 ```{r sep_cbind_batch_GSM3872442}
 sce.sep <- cbind(sample1.sce, sample2.sce)
@@ -150,11 +152,21 @@ plotUMAP(sce.sep, colour_by="Run", size_by = "sum")
 
 ```
 
+From the above plots you can see that even though the samples should be the same there is a batch effect from being run seperately. Now we can see it we can try to remove it.
+
 ## Normalise batches together
 
-```{r tog_norm_batch_GSM3872442}
+```{r tog_load_GSM3872442, eval=FALSE}
 sample3.sce <- SingleCellExperiment(list(counts=counts(sce[, sce$Run %in% c("SRR9264351", "SRR9264352")])),
                                        colData=colData(sce[, sce$Run %in% c("SRR9264351", "SRR9264352")]))
+
+saveRDS(sample3.sce, "./Robjects/BC_sample3.rds")
+```
+The above chunk illustrates how the combined object was made (`sample 3`) but if you are using our repo you can just load it in and process it with the preceeding steps.
+
+```{r tog_norm_batch_GSM3872442}
+
+sample3.sce <- readRDS("./Robjects/BC_sample3.rds")
 
 sample3.qclusters <- quickCluster(sample3.sce, method="igraph")
 sample3.sce <- computeSumFactors(sample3.sce, min.mean=0.1, cluster=sample3.qclusters)
@@ -194,30 +206,30 @@ combined.pca.merge <- merge(combined.hvg.pcs, samples.info, by='Cell')
 
 ```
 
-```{r tog_show_irlba_batch_GSM3872442, eval=FALSE, include=FALSE}
-ggplot(combined.pca.merge, aes(x=PC1, y=PC2, fill=Run)) +
-  geom_point(shape=21, size=3) +
-  theme_minimal()
-```
-
 Plot PC1-PC2 plane, with cells colored by 'Run' (and sized according to library size):
 
 ```{r tog_show_pca_batch_GSM3872442}
 sample3.sce <- runPCA(sample3.sce)
 plotPCA(sample3.sce, colour_by="Run", size_by = "sum")
 ```
+Plot the TSNE:
 
 ```{r tog_show_tsne_batch_GSM3872442}
 sample3.sce <- runTSNE(sample3.sce, dimred="PCA")
 plotTSNE(sample3.sce, colour_by="Run", size_by = "sum")
 ```
+Plot the UMAP:
 
 ```{r tog_show_umap_batch_GSM3872442}
 sample3.sce <- runUMAP(sample3.sce, dimred="PCA")
 plotUMAP(sample3.sce, colour_by="Run", size_by = "sum")
 ```
 
+Notice there is a difference o the plots between running these step separately or together. 
+
 ## Batch correction
+
+Make sure you sce object contains the information about which run and that information is a factor. This will be needed for future steps.
 
 ```{r editSce_batch_GSM3872442}
 sample3.sce$Run <- factor(sample3.sce$Run)
@@ -226,9 +238,7 @@ sample3.sce$batch <- sample3.sce$Run
 
 ###  Gaussian (normal) linear models
 
-<!-- 7.6.2.1 Gaussian (normal) linear models -->
-
-Limma
+We can use Limma functions to remove the batch effect using a linear model.
 
 ```{r linReg_batch_GSM3872442}
 suppressMessages(require(limma))
@@ -248,35 +258,28 @@ plotReducedDim(sample3.sce, dimred = "PCA_lm_batch",
   ggtitle("LM - regress out batch")
 ```
 
-## SCTransform
-<!-- remove -->
-
-First make a copy of the SCE object (we will need one later).
-
-```{r batchOnlySctRun_batch_GSM3872442}
-# have log lib size
-sample3.sce$log10sum <- log10(sample3.sce$sum)
-# keep copy of SCE to draw from after SCTransform,
-# which discard some genes TODO check-again/mention slow 'return all' option
-sample3.sceOrig <- sample3.sce
-```
-
-
+However, as you can see from the PCA the batch effect has not been entirely removed.
 
 ## mnnCorrect
 
-<!-- #https://bioconductor.org/packages/release/bioc/vignettes/batchelor/inst/doc/correction.html -->
+mnnCorrect uses a mutual nearest neighbour approach to batch correct. There is extensive documentation on how it works and there is a vignette here:
+
+https://bioconductor.org/packages/release/bioc/vignettes/batchelor/inst/doc/correction.html
+
+The original paper is here:
+
+https://pubmed.ncbi.nlm.nih.gov/29608177/
+
+Everything we need is included in the `Batchelor` library available in bioconductor. `Batchelor` is from the same authors as `scater` and `scran` and also features in the `OSCA` manual.
 
 ### Check presence of batch effect
 
-<!-- this is a lot of duplication, do I really need it? -->
-
-Batchelor commands to make the two batches and identify highly variable genes for faster dimensionality reduction.
+Batchelor commands to make the two batches and identify highly variable genes for faster dimensionality reduction. It has a slightly different workflow so here we demonstrate from the beginning again. We remake separate sce objects from our combined sample.
 
 ```{r noCor_prep_batch_GSM3872442}
 
 library(batchelor)
-# Mind assayNames()
+
 sce1 <- sample3.sce[, sample3.sce$Run == "SRR9264351"]
 sce2 <- sample3.sce[, sample3.sce$Run == "SRR9264352"]
 ```
@@ -315,15 +318,16 @@ reducedDim(sample3.sce, "UMAP_noCor") <- reducedDim(combined, "UMAP")
 
 ### Correct batch effect with mnnCorrect
 
-This is the initial method. It uses gene expression values to identify cells with similar expression patterns in both batches.
+Gene expression values are used to identify cells with similar expression patterns in both batches.
 
-Let us get the normalised counts:
+We need the normalised counts:
 
 ```{r mnnCor_prep_batch_GSM3872442}
 batch1 <- logcounts(sce1)
 batch2 <- logcounts(sce2)
 
 ```
+Now we can run mnnCorrect, even with 2 samples it can take a while.
 
 ```{r mnnCor_hvgOnly_batch_GSM3872442}
 # returns a matrix with rownames only for the gene subset,
@@ -368,10 +372,11 @@ plotUMAP(sample3.sce, colour_by="batch")
 reducedDim(sample3.sce, "UMAP_mnn") <- reducedDim(sample3.sce, "UMAP")
 ```
 
+The plots show nice amounts of mixing.
 
 ## fastMNN
 
-This method is faster than mnnCorrect as it identifies nearest neighbours after dimensionality reduction. 
+This method is faster than mnnCorrect as it identifies nearest neighbours after dimensionality reduction and is also avaliable in the `Batchelor` package. 
 
 ```{r fastMnn_run_batch_GSM3872442}
 fx <- batchelor::fastMNN(
@@ -418,7 +423,7 @@ reducedDim(sample3.sce, "UMAP_fastmnn") <- reducedDim(sample3.sce, "UMAP")
 
 ## Harmony
 
-Harmony [Korsunsky2018fast] is a newer batch correction method, which is designed to operate on PC space. The algorithm proceeds to iteratively cluster the cells, with the objective function formulated to promote cells from multiple datasets within each cluster. Once a clustering is obtained, the positions of the centroids of each dataset are obtained on a per-cluster basis and the coordinates are corrected. This procedure is iterated until convergence. Harmony comes with a theta parameter that controls the degree of batch correction (higher values lead to more dataset integration), and can account for multiple experimental and biological factors on input (see [variant of the 'Hemberg course'](https://biocellgen-public.svi.edu.au/mig_2019_scrnaseq-workshop/public/normalization-confounders-and-batch-correction.html#harmony)).
+Harmony [Korsunsky2018fast] is a newer batch correction method, which is also designed to operate on PC space. The algorithm proceeds to iteratively cluster the cells, with the objective function formulated to promote cells from multiple datasets within each cluster. Once a clustering is obtained, the positions of the centroids of each dataset are obtained on a per-cluster basis and the coordinates are corrected. This procedure is iterated until convergence. Harmony comes with a theta parameter that controls the degree of batch correction (higher values lead to more dataset integration), and can account for multiple experimental and biological factors on input (see [variant of the 'Hemberg course'](https://biocellgen-public.svi.edu.au/mig_2019_scrnaseq-workshop/public/normalization-confounders-and-batch-correction.html#harmony)).
 
 ```{r harmony_run_batch_GSM3872442}
 library(harmony)
