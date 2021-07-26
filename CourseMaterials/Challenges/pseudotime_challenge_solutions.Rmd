@@ -1,7 +1,15 @@
 
+---
+title: "CRUK CI Summer School 2021 - Introduction to single-cell RNA-seq analysis"
+subtitle: 'Trajectory Inference - Exercise'
+author: "Stephane Ballereau, Zeynep Kalender Atak"
+output:
+  html_document:
+    toc: yes
+---
 
 Pseudotime analysis for another HCA sample
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(SingleCellExperiment)
 library(scran)
 library(scater)
@@ -11,6 +19,7 @@ library(destiny)
 library(gam)
 library(viridis)
 ```
+
 
 
 ```{r}
