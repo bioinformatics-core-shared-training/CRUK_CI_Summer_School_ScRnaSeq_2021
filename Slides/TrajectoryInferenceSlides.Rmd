@@ -6,7 +6,7 @@ output:
   ioslides_presentation:
     widescreen: true
     smaller: true
-    incremental: true 
+    incremental: false 
     logo: Images/crukcc-transparent-small.png
     css: css/stylesheet.css
 ---
@@ -55,6 +55,12 @@ knitr::include_graphics('Images/trajectory.png')
 knitr::include_graphics('Images/saelens.png')
 ```
 
+## Which method to use? 
+
+```{r echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics('Images/trajectory_2.png')
+```
+
 ## Diffusion Maps (in brief)
 
 * It is a NON-LINEAR method of dimensionality reduction.
@@ -63,3 +69,14 @@ knitr::include_graphics('Images/saelens.png')
 
 * The data must present connectivity (transitional cells).
 
+## Final Considerations 
+
+* In reality, distance in multidimensional space reflects difference in transcriptional landscape, not actual time.
+
+* Necessary to have a continuum of states among your cells (Will not work well with 2 distinct clusters) 
+
+* May work with single time-point if ongoing differentiation process (It is better to have multiple experimental time points) 
+
+* Be aware, any dataset can be forced into a trajectory without any biological meaning!
+
+## 
