@@ -19,4 +19,47 @@ knitr::include_graphics('Images/workflow.svg')
 
 ## Trajectory Inference 
 
-* Learning objectives 
+```{r echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics('Images/trajectory.png')
+```
+
+* Cells that differentiate display a continuous spectrum of states
+  
+  + Transcriptional program for activation and differentiation
+  
+* Individual cells will differentiate in an unsynchronized manner
+  
+  + Each cell is a snapshot of differentiation time
+  
+* Pseudotime – abstract unit of progress
+
+  + Distance between a cell and the start of the trajectory
+  
+## Should you run trajectory inference? 
+
+* Are you sure that you have a developmental trajectory?
+
+* Do you have intermediate states?
+
+* Do you believe that you have branching in your trajectory?
+
+* Be aware, any dataset can be forced into a trajectory without any biological meaning!
+
+* First make sure that gene set and dimensionality reduction captures what you expect. 
+
+## Trajectory Inference Methods
+
+* Saelens et al. (2019) Nature Biotechnology
+
+```{r echo=FALSE, out.width='80%', fig.align='center'}
+knitr::include_graphics('Images/saelens.png')
+```
+
+## Diffusion Maps (in brief)
+
+* It is a NON-LINEAR method of dimensionality reduction.
+
+* The distances between points are measured as probability from going from one to another.
+
+* The data must present connectivity (transitional cells).
+
