@@ -252,7 +252,7 @@ plot.igraph(
 
 ## Graph-based clustering
 
-Example with different numbers of neigbours:
+Example with different numbers of neighbours:
 
 ```{r, echo=FALSE, out.height='60%', out.width = '60%', fig.align="center"}
 knitr::include_graphics("../Images/bioCellGenGraphDeng2.png", auto_pdf = TRUE)
