@@ -1,0 +1,54 @@
+
+
+Pseudotime analysis for another HCA sample
+```{r}
+library(SingleCellExperiment)
+library(scran)
+library(scater)
+library(pheatmap)
+library(tidyverse)
+library(destiny)
+library(gam)
+library(viridis)
+```
+
+
+```{r}
+sce.tcell<-readRDS(file="~/Course_Materials/scRNAseq/Robjects/hca.tcell.RDS")
+```
+
+
+# pull the barcodes for MantonBM1 sample & and downsample the set to 1000 genes 
+```{r}
+vec.bc <- colData(sce.tcell) %>%
+    data.frame() %>%
+    filter(Sample.Name == "MantonBM2") %>%
+    group_by(Sample.Name) %>%
+    sample_n(1000) %>%
+    pull(Barcode)
+
+tmpInd <- which(colData(sce.tcell)$Barcode %in% vec.bc)
+sce.tcell.BM2 <- sce.tcell[,tmpInd]
+
+```
+
+# Identify HVG and select top 500    
+```{r}
+
+```
+
+# Extract normalized count data for HVG 
+```{r}
+
+```
+
+# Run Diffusion Maps    
+```{r}
+
+```
+
+# Plot diffusion component 1 vs diffusion component 2 (DC1 vs DC2).     
+```{r}
+
+```
+

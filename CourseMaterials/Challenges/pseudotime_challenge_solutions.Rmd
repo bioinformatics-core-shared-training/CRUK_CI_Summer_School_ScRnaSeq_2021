@@ -1,0 +1,65 @@
+
+
+Pseudotime analysis for another HCA sample
+```{r}
+library(SingleCellExperiment)
+library(scran)
+library(scater)
+library(pheatmap)
+library(tidyverse)
+library(destiny)
+library(gam)
+library(viridis)
+```
+
+
+```{r}
+sce.tcell<-readRDS(file="~/Course_Materials/scRNAseq/Robjects/hca.tcell.RDS")
+```
+
+
+# pull the barcodes for MantonBM1 sample & and downsample the set to 1000 genes 
+```{r}
+vec.bc <- colData(sce.tcell) %>%
+    data.frame() %>%
+    filter(Sample.Name == "MantonBM2") %>%
+    group_by(Sample.Name) %>%
+    sample_n(1000) %>%
+    pull(Barcode)
+
+tmpInd <- which(colData(sce.tcell)$Barcode %in% vec.bc)
+sce.tcell.BM2 <- sce.tcell[,tmpInd]
+
+```
+
+# Identify HVG and select top 500    
+```{r}
+dec.tcell.BM2 <- modelGeneVar(sce.tcell.BM2)
+top.tcell.BM2 <- getTopHVGs(dec.tcell.BM2, n=500)
+```
+
+# Extract normalized count data for HVG 
+```{r}
+tcell_BM2_counts<-logcounts(sce.tcell.BM2)
+tcell_counts_BM2<-t(as.matrix(tcell_BM2_counts[top.tcell.BM2,]))
+cellLabels <- sce.tcell.BM2$Barcode
+rownames(tcell_counts_BM2)<-cellLabels
+```
+
+# Run Diffusion Maps    
+```{r}
+dm_tcell_BM2 <- DiffusionMap(tcell_counts_BM2, n_pcs = 50)
+```
+
+# Plot diffusion component 1 vs diffusion component 2 (DC1 vs DC2).     
+```{r}
+tmp <- data.frame(DC1 = eigenvectors(dm_tcell_BM2)[, 1],
+                  DC2 = eigenvectors(dm_tcell_BM2)[, 2])
+
+ggplot(tmp, aes(x = DC1, y = DC2)) +
+    geom_point() + 
+    xlab("Diffusion component 1") + 
+    ylab("Diffusion component 2") +
+    theme_classic()
+```
+
