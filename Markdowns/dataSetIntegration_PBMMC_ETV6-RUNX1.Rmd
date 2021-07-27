@@ -74,10 +74,10 @@ all.sce
 
 We then apply the standard workflow to each sample separately:
 
-* normalisation,
+* [normalisation](./normalisation_5hCellPerSpl_caron.Rmd)
 * variance modelling
-* dimensionality reduction
-* clustering (more details on this in the clustering section LINK)
+* [dimensionality reduction](./dimRedFeatSel_2021.Rmd)
+* [clustering](./clusteringPostDsi.Rmd) 
 
 ```{r standard_workflow_PBMMC_ETV6-RUNX1}
 #--- normalization ---#
@@ -187,7 +187,7 @@ uncorrected <- runPCA(uncorrected,
                       BSPARAM=BiocSingular::RandomParam())
 ```
 
-We use graph-based clustering on the components to obtain a summary of the population structure. Different clustering methods are discussed in a later chapter LINK.
+We use graph-based clustering on the components to obtain a summary of the population structure. Different clustering methods are discussed in a later [chapter](./clusteringPostDsi.Rmd).
 
 As the samples should be replicates, each cluster should ideally consist of cells from each batch. However, we instead see clusters that are comprised of cells from a single batch. This indicates that cells of the same type are artificially separated due to technical differences between batches.
 
