@@ -1,4 +1,4 @@
-# Introduction to Bulk RNA-seq data analysis 
+# Introduction to single-cell RNA-seq data analysis 
 ### 23rd - 26th July 2021
 #### Taught remotely
 #### Bioinformatics Training, Craik-Marshall Building, Downing Site, University of Cambridge
